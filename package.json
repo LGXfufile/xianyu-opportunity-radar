@@ -1,0 +1,34 @@
+{
+  "name": "xianyu-opportunity-radar",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "prepare": "wxt prepare",
+    "dev": "wxt",
+    "dev:edge": "wxt -b edge",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/chrome": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest",
+    "vitest": "latest",
+    "wxt": "latest"
+  },
+  "packageManager": "pnpm@10.15.1"
+}
