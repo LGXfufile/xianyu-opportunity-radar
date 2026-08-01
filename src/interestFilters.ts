@@ -7,7 +7,7 @@ export type InterestFilter = {
   includeKeywords?: string; excludeKeywords?: string;
   sufficientOnly: boolean; blueOceanOnly: boolean; sort: InterestSort;
 };
-export type FilterableMetric = { title?: string; wants: number; views: number; ratio: number; price: number; score: number; profit: number; publishedAt?: number; blueOcean: boolean; index: number };
+export type FilterableMetric = { title?: string; wants: number; views: number; ratio: number; price: number; score: number; profit: number; publishedAt?: number; blueOcean: boolean; index: number; competition?: number };
 
 export const defaultInterestFilter: InterestFilter = { sufficientOnly: false, blueOceanOnly: false, sort: 'default' };
 

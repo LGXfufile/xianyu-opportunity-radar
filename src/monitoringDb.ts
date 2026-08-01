@@ -1,9 +1,11 @@
-import type { MonitorSummary, MonitoredProduct, ProductSnapshot } from './monitoringTypes';
+import type { MonitorSummary, MonitoredProduct, MonitoringEvent, MonitoringTask, MonitoringTaskSummary, ProductSnapshot } from './monitoringTypes';
 
 const DB_NAME = 'xianyu-opportunity-radar';
 const DB_VERSION = 1;
 const PRODUCTS = 'products';
 const SNAPSHOTS = 'snapshots';
+const TASKS = 'tasks';
+const EVENTS = 'events';
 const DEDUPE_WINDOW = 10 * 60 * 1000;
 
 function requestValue<T>(request: IDBRequest<T>) {
@@ -32,6 +34,15 @@ export function openMonitoringDb() {
         store.createIndex('itemIdCapturedAt', ['itemId', 'capturedAt']);
         store.createIndex('itemId', 'itemId');
       }
+      if (!db.objectStoreNames.contains(TASKS)) {
+        const store = db.createObjectStore(TASKS, { keyPath: 'id' });
+        store.createIndex('activeNextRunAt', ['active', 'nextRunAt']);
+      }
+      if (!db.objectStoreNames.contains(EVENTS)) {
+        const store = db.createObjectStore(EVENTS, { keyPath: 'id', autoIncrement: true });
+        store.createIndex('taskIdCreatedAt', ['taskId', 'createdAt']);
+        store.createIndex('itemIdCreatedAt', ['itemId', 'createdAt']);
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('监控数据库打开失败'));
@@ -43,6 +54,20 @@ async function snapshotsFor(db: IDBDatabase, itemId: string) {
   const values = await requestValue(transaction.objectStore(SNAPSHOTS).index('itemId').getAll(itemId)) as ProductSnapshot[];
   await transactionDone(transaction);
   return values.sort((a, b) => b.capturedAt - a.capturedAt);
+}
+
+async function eventCountFor(db: IDBDatabase, taskId: string) {
+  const transaction = db.transaction(EVENTS, 'readonly');
+  const values = await requestValue(transaction.objectStore(EVENTS).index('taskIdCreatedAt').getAll(IDBKeyRange.bound([taskId, 0], [taskId, Number.MAX_SAFE_INTEGER])));
+  await transactionDone(transaction);
+  return Array.isArray(values) ? values.length : 0;
+}
+
+async function allTasks(db: IDBDatabase) {
+  const transaction = db.transaction(TASKS, 'readonly');
+  const values = await requestValue(transaction.objectStore(TASKS).getAll()) as MonitoringTask[];
+  await transactionDone(transaction);
+  return values;
 }
 
 export async function addSnapshot(snapshot: ProductSnapshot) {
@@ -93,4 +118,79 @@ export async function removeMonitoredProduct(itemId: string) {
     keys.forEach(key => transaction.objectStore(SNAPSHOTS).delete(key));
     await transactionDone(transaction);
   } finally { db.close(); }
+}
+
+export async function upsertTask(task: MonitoringTask) {
+  const db = await openMonitoringDb();
+  try {
+    const transaction = db.transaction(TASKS, 'readwrite');
+    transaction.objectStore(TASKS).put(task);
+    await transactionDone(transaction);
+  } finally {
+    db.close();
+  }
+}
+
+export async function removeTask(taskId: string) {
+  const db = await openMonitoringDb();
+  try {
+    const transaction = db.transaction(TASKS, 'readwrite');
+    transaction.objectStore(TASKS).delete(taskId);
+    await transactionDone(transaction);
+  } finally {
+    db.close();
+  }
+}
+
+export async function listTasks(): Promise<MonitoringTaskSummary[]> {
+  const db = await openMonitoringDb();
+  try {
+    const tasks = await allTasks(db);
+    const now = Date.now();
+    const summaries = await Promise.all(tasks.map(async task => {
+      const dueAt = task.nextRunAt ?? (task.lastRunAt ?? task.createdAt);
+      const dueInMs = dueAt - now;
+      const overdue = dueInMs <= 0;
+      return {
+        ...task,
+        eventCount: await eventCountFor(db, task.id),
+        dueInMs,
+        dueLabel: overdue ? '已到期' : `还有 ${Math.ceil(dueInMs / 60000)} 分钟`,
+        overdue
+      };
+    }));
+    return summaries.sort((a, b) => Number(b.overdue) - Number(a.overdue) || (a.nextRunAt ?? 0) - (b.nextRunAt ?? 0));
+  } finally {
+    db.close();
+  }
+}
+
+export async function addEvents(events: MonitoringEvent[]) {
+  if (!events.length) return 0;
+  const db = await openMonitoringDb();
+  try {
+    const transaction = db.transaction(EVENTS, 'readwrite');
+    const store = transaction.objectStore(EVENTS);
+    let count = 0;
+    for (const event of events) {
+      store.add(event);
+      count += 1;
+    }
+    await transactionDone(transaction);
+    return count;
+  } finally {
+    db.close();
+  }
+}
+
+export async function getRecentEvents(limit = 20): Promise<MonitoringEvent[]> {
+  const db = await openMonitoringDb();
+  try {
+    const transaction = db.transaction(EVENTS, 'readonly');
+    const values = await requestValue(transaction.objectStore(EVENTS).getAll()) as MonitoringEvent[];
+    await transactionDone(transaction);
+    return values.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+  } finally {
+    db.close();
+  }
 }

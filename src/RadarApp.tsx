@@ -5,8 +5,8 @@ import { FeedbackBar, LoadingState, OpportunityCard, ScoreRing } from './compone
 import { calculateProfit } from './scoring';
 import { clearWatchlist, loadWatchlist, removeWatchItem, saveWatchItem } from './storage';
 import type { Feedback, Opportunity, WatchItem } from './types';
-import { loadMonitors, monitorDelta, removeMonitor } from './monitoringClient';
-import type { MonitorSummary } from './monitoringTypes';
+import { loadMonitors, loadTasks, monitorDelta, removeMonitor, removeTask, runDueTasks, saveTask, taskDueLabel } from './monitoringClient';
+import type { MonitorSummary, MonitoringTask, MonitoringTaskSummary } from './monitoringTypes';
 
 type Tab = 'discover' | 'opportunities' | 'watchlist' | 'settings';
 
@@ -18,7 +18,9 @@ export function RadarApp() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [monitors, setMonitors] = useState<MonitorSummary[]>([]);
+  const [tasks, setTasks] = useState<MonitoringTaskSummary[]>([]);
   const [monitorLoading, setMonitorLoading] = useState(false);
+  const [taskLoading, setTaskLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [price, setPrice] = useState(49);
   const [cost, setCost] = useState(4);
@@ -34,7 +36,14 @@ export function RadarApp() {
     finally { setMonitorLoading(false); }
   };
 
-  useEffect(() => { loadWatchlist().then(setWatchlist).catch(error => setFeedback({ kind: 'error', message: error.message })); void refreshMonitors(); }, []);
+  const refreshTasks = async () => {
+    setTaskLoading(true);
+    try { setTasks(await loadTasks()); }
+    catch (error) { setFeedback({ kind: 'error', message: error instanceof Error ? error.message : '读取监控任务失败' }); }
+    finally { setTaskLoading(false); }
+  };
+
+  useEffect(() => { loadWatchlist().then(setWatchlist).catch(error => setFeedback({ kind: 'error', message: error.message })); void refreshMonitors(); void refreshTasks(); }, []);
 
   const profit = useMemo(() => {
     try { return calculateProfit({ price, variable: cost, hours, hourlyRate, refundRate }); }
@@ -63,6 +72,28 @@ export function RadarApp() {
       setWatchlist(next); setFeedback({ kind: 'success', message: '已收藏，后续访问时会显示变化。' });
     } catch (error) { setFeedback({ kind: 'error', message: error instanceof Error ? error.message : '收藏失败' }); }
     finally { setBusyId(null); }
+  };
+
+  const saveCurrentTask = async () => {
+    const task: MonitoringTask = {
+      id: `task-${Date.now()}`,
+      name: `${query.trim() || '机会任务'} · ${new Date().toLocaleDateString('zh-CN')}`,
+      keywords: query.trim() ? [query.trim()] : [],
+      minScore: 75,
+      minRatio: 8,
+      maxCompetition: 70,
+      minProfitMargin: 25,
+      minPrice: 0,
+      maxPrice: 99999,
+      publishedWindowDays: 30,
+      active: true,
+      intervalMinutes: 180,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    await saveTask(task);
+    await refreshTasks();
+    setFeedback({ kind: 'success', message: '已保存为定时监控任务。' });
   };
 
   const remove = async (id: string) => {
@@ -112,6 +143,12 @@ export function RadarApp() {
           </article>;
         })}</div>}
         {watchlist.length > 0 && <><div className="subsection-title"><span>概念机会收藏</span><button onClick={async () => { await clearWatchlist(); setWatchlist([]); }} aria-label="清空概念机会收藏">清空</button></div><div className="watch-list">{watchlist.map(item => <div key={item.id}><div><strong>{item.title}</strong><span>机会分 {item.score} · {new Date(item.savedAt).toLocaleDateString('zh-CN')}</span></div><button onClick={() => remove(item.id)} aria-label={`删除${item.title}`}><Trash2 size={16} /></button></div>)}</div></>}
+        <div className="section-heading" style={{ marginTop: 20 }}><div><span className="eyebrow">定时监控</span><h2>{tasks.length ? `${tasks.length} 个任务` : '还没有监控任务'}</h2></div><div style={{ display: 'flex', gap: 8 }}><button className="icon-button" disabled={taskLoading} onClick={async () => { await refreshTasks(); await runDueTasks(); await refreshTasks(); }} aria-label="手动扫描任务"><RefreshCw className={taskLoading ? 'spin' : ''} size={17} /></button><button className="secondary" onClick={saveCurrentTask}>保存当前方向</button></div></div>
+        {tasks.length === 0 ? <div className="empty monitor-empty"><TrendingUp size={28} /><p>把当前搜索方向保存成任务，后续会定时复扫并记录新增机会。</p></div> : <div className="monitor-list">{tasks.map(task => <article key={task.id} className="monitor-card">
+          <div className="monitor-card-head"><div><strong>{task.name}</strong><span>{task.keywords.join('、') || '无关键词'} · {taskDueLabel(task)} · {task.active ? '运行中' : '已暂停'}</span></div><span className="monitor-score">{task.eventCount}</span></div>
+          <div className="monitor-metrics"><span>阈值 {task.minScore}</span><span>想要率 {task.minRatio}%</span><span>竞争 ≤ {task.maxCompetition}</span><span>{task.publishedWindowDays} 天</span></div>
+          <div className="monitor-actions"><button onClick={async () => { await removeTask(task.id); await refreshTasks(); setFeedback({ kind: 'info', message: '已删除监控任务。' }); }}><Trash2 size={13} />删除任务</button></div>
+        </article>)}</div>}
       </section>}
 
       {tab === 'settings' && <>

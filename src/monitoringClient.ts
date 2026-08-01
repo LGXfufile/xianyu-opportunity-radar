@@ -1,4 +1,4 @@
-import type { MonitorMessage, MonitorResponse, MonitorSummary } from './monitoringTypes';
+import type { MonitorMessage, MonitorResponse, MonitorSummary, MonitoringTask, MonitoringTaskSummary } from './monitoringTypes';
 
 async function send<T>(message: MonitorMessage): Promise<T> {
   if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return [] as T;
@@ -9,6 +9,10 @@ async function send<T>(message: MonitorMessage): Promise<T> {
 
 export const loadMonitors = () => send<MonitorSummary[]>({ type: 'MONITOR_LIST' });
 export const removeMonitor = (itemId: string) => send<void>({ type: 'MONITOR_REMOVE', itemId });
+export const loadTasks = () => send<MonitoringTaskSummary[]>({ type: 'TASK_LIST' });
+export const saveTask = (task: MonitoringTask) => send<void>({ type: 'TASK_UPSERT', task });
+export const removeTask = (taskId: string) => send<void>({ type: 'TASK_REMOVE', taskId });
+export const runDueTasks = () => send<MonitoringTaskSummary[]>({ type: 'TASK_RUN_DUE' });
 
 export function monitorDelta(item: MonitorSummary) {
   const latest = item.latest, previous = item.previous;
@@ -18,4 +22,11 @@ export function monitorDelta(item: MonitorSummary) {
     price: latest && previous ? latest.price - previous.price : 0,
     score: latest && previous ? latest.score - previous.score : 0
   };
+}
+
+export function taskDueLabel(task: MonitoringTaskSummary) {
+  if (task.overdue) return '立即执行';
+  if (task.dueInMs < 60 * 60 * 1000) return '1小时内';
+  if (task.dueInMs < 6 * 60 * 60 * 1000) return '今日稍后';
+  return task.dueLabel;
 }

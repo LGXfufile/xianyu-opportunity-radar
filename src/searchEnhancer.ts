@@ -1,7 +1,7 @@
 import { calculateInterestMetric, formatPercent } from './interestRatio';
 import { compareInterestMetrics, defaultInterestFilter, matchesInterestFilter, type FilterableMetric, type InterestFilter, type InterestSort } from './interestFilters';
 import { calculateMarketContext, calculateOpportunityScore } from './opportunityScore';
-import type { MonitorMessage, MonitorResponse, MonitorSummary, MonitoredProduct, ProductSnapshot } from './monitoringTypes';
+import type { MonitorMessage, MonitorResponse, MonitorSummary, MonitoredProduct, MonitoringEvent, MonitoringTask, MonitoringTaskSummary, ProductSnapshot } from './monitoringTypes';
 
 type DetailData = { wants: number; views: number; fetchedAt: number; createdAt?: number | string; sellerId?: string; sellerSold?: number; sellerItems?: number };
 type DetailResponse = { source: 'XY_RADAR'; type: 'DETAIL_RESPONSE'; requestId: string; ok: boolean; wants?: number; views?: number; createdAt?: number | string; sellerId?: string | number; sellerSold?: number; sellerItems?: number; error?: string };
@@ -63,6 +63,36 @@ async function sendMonitor<T>(message: MonitorMessage) {
   return response.data;
 }
 
+const splitKeywords = (value: string[] | string | undefined) => {
+  const raw = Array.isArray(value) ? value : (value || '').split(/[,，\n]/);
+  return raw.map(item => item.trim().toLocaleLowerCase()).filter(Boolean);
+};
+
+function matchesTask(metric: { title?: string; wants: number; views: number; ratio: number; price: number; score: number; profit: number; publishedAt?: number; blueOcean: boolean; index: number; competition?: number } | null, task: MonitoringTask) {
+  if (!metric) return false;
+  const keywords = splitKeywords(task.keywords);
+  if (keywords.length && !keywords.some(word => metric.title?.toLocaleLowerCase().includes(word))) return false;
+  const ratioPercent = metric.ratio * 100;
+  const profitMargin = metric.price > 0 ? metric.profit / metric.price * 100 : 0;
+  const now = Date.now();
+  if (metric.score < task.minScore) return false;
+  if (ratioPercent < task.minRatio) return false;
+  if (metric.price < task.minPrice || metric.price > task.maxPrice) return false;
+  if (profitMargin < task.minProfitMargin) return false;
+  if ((metric.competition ?? 50) > task.maxCompetition) return false;
+  if (task.publishedWindowDays && metric.publishedAt && now - metric.publishedAt > task.publishedWindowDays * 86400000) return false;
+  return true;
+}
+
+function cardMetricFromData(card: HTMLAnchorElement) {
+  const wants = Number(card.dataset.xyWants), views = Number(card.dataset.xyViews), ratio = Number(card.dataset.xyRatio), index = Number(card.dataset.xyIndex);
+  const price = Number(card.dataset.xyPrice), score = Number(card.dataset.xyScore), profit = Number(card.dataset.xyProfit), publishedAt = card.dataset.xyPublished ? Number(card.dataset.xyPublished) : undefined;
+  const title = card.querySelector<HTMLElement>('[class*="main-title"]')?.innerText.replace(/\s+/g, ' ').trim();
+  return [wants, views, ratio, price, score, profit, index].every(Number.isFinite)
+    ? { title, wants, views, ratio, price, score, profit, publishedAt, blueOcean: card.dataset.xyBlue === 'true', index, competition: Number(card.dataset.xyCompetition || 0) }
+    : null;
+}
+
 function renderError(container: HTMLElement, error: unknown, onRetry: () => void) {
   container.className = 'xy-interest xy-interest--error';
   container.innerHTML = '';
@@ -99,8 +129,10 @@ export function startSearchEnhancer(signal: AbortSignal) {
   let countNode: HTMLElement | null = null;
   let activeFilterNode: HTMLElement | null = null;
   let insightNode: HTMLElement | null = null;
+  let taskSummaryNode: HTMLElement | null = null;
   const loaded = new Map<HTMLAnchorElement, DetailData & { cached: boolean }>();
   const monitoredIds = new Set<string>();
+  const emittedSignals = new Map<string, string>();
 
   const cardMetric = (card: HTMLAnchorElement): FilterableMetric | null => {
     const wants = Number(card.dataset.xyWants), views = Number(card.dataset.xyViews), ratio = Number(card.dataset.xyRatio), index = Number(card.dataset.xyIndex);
@@ -153,7 +185,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
       const accessibilityScore = newListingSignal * .45 + smallSellerSignal * .35 + listingLoadSignal * .2;
       const result = calculateOpportunityScore({ ...data, trustedRatio: metric.trustedRatio, price, ...profitConfig, competitionScore: context.competitionScore, accessibilityScore });
       const itemId = new URL(card.href).searchParams.get('id') || '';
-      card.dataset.xyPrice = String(price); card.dataset.xyScore = String(result.score); card.dataset.xyProfit = String(result.netProfit); card.dataset.xyBlue = String(result.verdict === 'blue-ocean');
+      card.dataset.xyPrice = String(price); card.dataset.xyScore = String(result.score); card.dataset.xyProfit = String(result.netProfit); card.dataset.xyBlue = String(result.verdict === 'blue-ocean'); card.dataset.xyCompetition = String(result.competition); card.dataset.xyProfitMargin = String(result.margin);
       if (Number.isFinite(created)) card.dataset.xyPublished = String(created); else delete card.dataset.xyPublished;
       container.querySelector('.xy-opportunity')?.remove();
       const row = document.createElement('div'); row.className = `xy-opportunity xy-opportunity--${result.verdict === 'blue-ocean' ? 'blue' : result.verdict}`;
@@ -185,7 +217,56 @@ export function startSearchEnhancer(signal: AbortSignal) {
       const blue = metrics.filter(item => item.blueOcean).length;
       insightNode.textContent = `市场快照：中位价 ¥${medianPrice.toFixed(0)} · 近30天新品 ${fresh}/${metrics.length} · 头部想要集中度 ${(context.top10Concentration * 100).toFixed(0)}% · 蓝海候选 ${blue}`;
     } else if (insightNode) insightNode.textContent = '当前条件没有匹配商品，请放宽时间、价格或关键词范围。';
+    if (taskSummaryNode) {
+      const totalMonitored = monitoredIds.size;
+      const blueCount = [...loaded.keys()].filter(card => card.dataset.xyBlue === 'true').length;
+      taskSummaryNode.textContent = `任务扫描已就绪 · 当前监控 ${totalMonitored} 个商品 · 蓝海候选 ${blueCount} 个`;
+    }
     applyFilter();
+  };
+
+  const runTaskScan = async (reason: 'manual' | 'tick' = 'manual') => {
+    const tasks = await sendMonitor<MonitoringTaskSummary[]>({ type: 'TASK_LIST' }).catch(() => [] as MonitoringTaskSummary[]);
+    const cards = [...document.querySelectorAll<HTMLAnchorElement>('a[data-xy-enhanced="true"]')];
+    const byItemId = new Map(cards.map(card => [new URL(card.href).searchParams.get('id') || '', card] as const));
+    const events: Array<{ taskId: string; itemId: string; signature: string; title: string; score: number; wants: number; views: number; ratio: number; price: number; profit: number; url: string; summary: string; kind: 'new-match' | 'score-up' | 'score-down' | 'blue-ocean'; createdAt: number }> = [];
+    const updates: MonitoringTask[] = [];
+    for (const task of tasks) {
+      const nextRunAt = Date.now() + task.intervalMinutes * 60000;
+      const activeTask: MonitoringTask = { ...task, lastRunAt: Date.now(), nextRunAt, updatedAt: Date.now() };
+      const matched = cards.map(card => ({ card, metric: cardMetric(card) })).filter((entry): entry is { card: HTMLAnchorElement; metric: FilterableMetric } => !!entry.metric && matchesTask(entry.metric, task));
+      activeTask.lastMatchCount = matched.length;
+      activeTask.lastSignal = matched.length ? `命中 ${matched.length} 个机会` : '暂无命中';
+      updates.push(activeTask);
+      const taskLabels = matched.slice(0, 3).map(entry => entry.metric.title || '未命名商品');
+      for (const entry of matched.slice(0, 8)) {
+        const itemId = new URL(entry.card.href).searchParams.get('id') || '';
+        const signature = `${task.id}:${itemId}:${entry.metric.score}:${entry.metric.wants}:${entry.metric.views}:${entry.metric.price}`;
+        if (emittedSignals.get(`${task.id}:${itemId}`) === signature) continue;
+        emittedSignals.set(`${task.id}:${itemId}`, signature);
+        events.push({
+          taskId: task.id,
+          itemId,
+          signature,
+          title: entry.metric.title || '未命名商品',
+          score: entry.metric.score,
+          wants: entry.metric.wants,
+          views: entry.metric.views,
+          ratio: entry.metric.ratio,
+          price: entry.metric.price,
+          profit: entry.metric.profit,
+          url: entry.card.href,
+          summary: `${reason === 'tick' ? '定时扫描' : '手动扫描'}命中：${task.name} · ${taskLabels.join('、') || '无标题'}`,
+          kind: entry.metric.blueOcean ? 'blue-ocean' : entry.metric.score >= task.minScore + 10 ? 'score-up' : 'new-match',
+          createdAt: Date.now()
+        });
+      }
+    }
+    if (updates.length) {
+      await Promise.allSettled(updates.map(task => sendMonitor<void>({ type: 'TASK_UPSERT', task })));
+      if (events.length) await sendMonitor<void>({ type: 'TASK_EVENT_APPEND', events: events.map(({ signature: _signature, ...event }) => event) as MonitoringEvent[] }).catch(() => undefined);
+    }
+    if (taskSummaryNode) taskSummaryNode.textContent = `已${reason === 'tick' ? '定时' : '手动'}扫描 ${tasks.length} 个任务，发现 ${events.length} 个新机会信号`;
   };
 
   const makeNumberField = (label: string, key: keyof Pick<InterestFilter, 'minWants' | 'maxWants' | 'minViews' | 'maxViews' | 'minRatio' | 'maxRatio' | 'minPrice' | 'maxPrice' | 'minScore'>, placeholder: string) => {
@@ -263,7 +344,12 @@ export function startSearchEnhancer(signal: AbortSignal) {
     const blueCheck = document.createElement('label'); blueCheck.className = 'xy-filter-check'; const blueBox = document.createElement('input'); blueBox.type = 'checkbox'; blueBox.checked = filter.blueOceanOnly; blueBox.addEventListener('change', () => { filter = { ...filter, blueOceanOnly: blueBox.checked }; persistFilter(); }); blueCheck.append(blueBox, '只看蓝海候选（≥75且通过硬门槛）'); body.append(blueCheck);
     const profitTitle = document.createElement('div'); profitTitle.className = 'xy-profit-title'; profitTitle.textContent = '利润假设 · 修改后立即重算'; body.append(profitTitle, makeProfitField('单件成本 ¥', 'unitCost', '5'), makeProfitField('履约成本 ¥', 'fulfillmentCost', '2'), makeProfitField('退款/平台预留 %', 'reserveRate', '5'));
     insightNode = document.createElement('div'); insightNode.className = 'xy-market-insight'; insightNode.textContent = '正在生成市场快照…'; body.append(insightNode);
-    const note = document.createElement('div'); note.className = 'xy-filter-note'; note.textContent = '机会得分：需求25% + 竞争25% + 新卖家进入性25% + 供需缺口15% + 利润10%。达到75分且样本、需求、竞争、进入性、净利均过线，才标记蓝海候选；时间未知的商品在启用发布时间筛选后会被排除。'; body.append(note);
+  const note = document.createElement('div'); note.className = 'xy-filter-note'; note.textContent = '机会得分：需求25% + 竞争25% + 新卖家进入性25% + 供需缺口15% + 利润10%。达到75分且样本、需求、竞争、进入性、净利均过线，才标记蓝海候选；时间未知的商品在启用发布时间筛选后会被排除。'; body.append(note);
+    taskSummaryNode = document.createElement('div'); taskSummaryNode.className = 'xy-market-insight'; taskSummaryNode.textContent = '任务扫描：等待定时器触发或手动点击“立即扫描”'; body.append(taskSummaryNode);
+    const taskAction = document.createElement('button'); taskAction.type = 'button'; taskAction.className = 'xy-filter-search'; taskAction.textContent = '立即扫描任务';
+    taskAction.setAttribute('aria-label', '立即扫描当前监控任务');
+    taskAction.addEventListener('click', () => { void runTaskScan('manual'); });
+    actions.append(taskAction);
     toggleInput.addEventListener('change', () => {
       filterEnabled = toggleInput.checked; root.dataset.filterEnabled = String(filterEnabled); search.disabled = !filterEnabled;
       toggleText.textContent = filterEnabled ? '筛选已开启' : '启用筛选'; void chrome.storage.local.set({ [FILTER_ENABLED_KEY]: filterEnabled }); recomputeOpportunities();
@@ -286,6 +372,10 @@ export function startSearchEnhancer(signal: AbortSignal) {
     });
     else task.reject(new Error(response.error || '热度数据获取失败'));
   }, { signal });
+
+  chrome.runtime.onMessage.addListener((message: { type?: string }) => {
+    if (message?.type === 'TASK_TICK') void runTaskScan('tick');
+  });
 
   const queue: Array<{ card: HTMLAnchorElement; container: HTMLElement; itemId: string }> = [];
   const seen = new WeakSet<HTMLAnchorElement>();
