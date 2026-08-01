@@ -3,6 +3,7 @@ export type InterestFilter = {
   minWants?: number; maxWants?: number; minViews?: number; maxViews?: number;
   minRatio?: number; maxRatio?: number; minPrice?: number; maxPrice?: number; minScore?: number;
   publishedAfter?: string; publishedBefore?: string;
+  publishedPreset?: 7 | 30 | 90;
   includeKeywords?: string; excludeKeywords?: string;
   sufficientOnly: boolean; blueOceanOnly: boolean; sort: InterestSort;
 };

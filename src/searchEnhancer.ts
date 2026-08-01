@@ -78,6 +78,7 @@ function addStyles() {
     .xy-filter-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.xy-filter-title{display:flex;align-items:center;gap:9px;font-weight:750}.xy-filter-count{color:#1e5b43;background:#e4f3ea;border-radius:999px;padding:3px 8px;font-size:11px}.xy-filter-actions{display:flex;gap:6px}.xy-filter button{border:1px solid #1c262117;background:#fff;border-radius:9px;padding:6px 9px;cursor:pointer;color:inherit}.xy-filter .xy-filter-search{background:#17201c;color:#fff;border-color:#17201c;padding-inline:14px;font-weight:750;box-shadow:0 4px 12px #17201c24}.xy-filter .xy-filter-search:hover{background:#27332d}.xy-filter .xy-filter-search:active{transform:scale(.97)}.xy-filter-body{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin-top:12px}.xy-filter-field{display:grid;gap:4px;color:#68716c;font-size:11px}.xy-filter-field input,.xy-filter-field select{width:100%;border:1px solid #1c26211f;background:#fff;border-radius:9px;padding:8px;color:#17201c;font:12px inherit;outline:none}.xy-filter-field input:focus,.xy-filter-field select:focus{border-color:#2d7453;box-shadow:0 0 0 3px #2d74531c}.xy-filter-check{display:flex;align-items:center;gap:7px;color:#48514c;font-size:12px}.xy-filter-check input{accent-color:#1e5b43}.xy-filter-note{grid-column:1/-1;color:#7a817d;font-size:11px}.xy-filter[data-collapsed="true"] .xy-filter-body{display:none}@media(max-width:900px){.xy-filter-body{grid-template-columns:repeat(2,minmax(120px,1fr))}}@media(prefers-color-scheme:dark){.xy-filter{background:#1d2420f2;color:#f1f5f2;border-color:#ffffff17}.xy-filter button,.xy-filter-field input,.xy-filter-field select{background:#202723;color:#f1f5f2;border-color:#ffffff17}.xy-filter .xy-filter-search{background:#e9f1ec;color:#152019;border-color:#e9f1ec}.xy-filter-count{background:#233f31;color:#81c5a2}}
     .xy-opportunity{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;padding-top:5px;margin-top:2px;border-top:1px solid #1e5b4320}.xy-opportunity b{font-size:12px}.xy-opportunity small{opacity:.76}.xy-opportunity--blue b{color:#087a45}.xy-opportunity--avoid b{color:#8a4b32}.xy-profit-title{grid-column:1/-1;padding-top:3px;font-size:12px;font-weight:750}.xy-filter-body{grid-template-columns:repeat(5,minmax(110px,1fr))}.xy-market-insight{grid-column:1/-1;padding:9px 11px;border-radius:10px;background:#eef5f0;color:#315342;font-size:12px}.xy-filter-export{white-space:nowrap}@media(prefers-color-scheme:dark){.xy-opportunity--blue b{color:#7ee2ae}.xy-market-insight{background:#23332a;color:#a8d6bd}}
     .xy-filter-toggle{display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:999px;background:#f1f3f1;color:#68716c;font-size:12px;cursor:pointer;white-space:nowrap}.xy-filter-toggle input{width:16px;height:16px;accent-color:#1e5b43}.xy-filter[data-filter-enabled="false"] .xy-filter-body{opacity:.48;pointer-events:none;filter:saturate(.6)}.xy-filter[data-filter-enabled="false"] .xy-filter-search{opacity:.5;cursor:not-allowed}.xy-filter[data-filter-enabled="true"] .xy-filter-toggle{background:#e2f2e8;color:#1e5b43;font-weight:700}
+    .xy-active-filter{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:#eef1ef;color:#59635e;font-size:11px;font-weight:650}.xy-filter[data-filter-enabled="true"] .xy-active-filter{background:#173e2d;color:#fff}.xy-active-filter::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.72}
   `;
   document.head.append(style);
 }
@@ -89,6 +90,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
   let profitConfig: ProfitConfig = { ...defaultProfit };
   let filterRoot: HTMLElement | null = null;
   let countNode: HTMLElement | null = null;
+  let activeFilterNode: HTMLElement | null = null;
   let insightNode: HTMLElement | null = null;
   const loaded = new Map<HTMLAnchorElement, DetailData & { cached: boolean }>();
 
@@ -111,6 +113,12 @@ export function startSearchEnhancer(signal: AbortSignal) {
     if (countNode) countNode.textContent = filterEnabled
       ? (ranked.length < cards.length ? `${matched}/${ranked.length} 命中 · ${ranked.length}/${cards.length} 已分析` : `${matched}/${ranked.length} 命中`)
       : `${ranked.length}/${cards.length} 已分析 · 筛选未开启`;
+    if (activeFilterNode) {
+      const presetLabels: Record<number, string> = { 7: '近 7 天', 30: '近 1 个月', 90: '近 3 个月' };
+      const range = filter.publishedPreset ? presetLabels[filter.publishedPreset]
+        : filter.publishedAfter || filter.publishedBefore ? `${filter.publishedAfter || '不限'} 至 ${filter.publishedBefore || '今天'}` : '全部时间';
+      activeFilterNode.textContent = filterEnabled ? `发布时间生效中：${range}` : `发布时间已设置：${range} · 开启后生效`;
+    }
   };
 
   const persistFilter = () => { void chrome.storage.local.set({ [FILTER_KEY]: filter }); recomputeOpportunities(); };
@@ -177,7 +185,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
   const makeDateField = (label: string, key: 'publishedAfter' | 'publishedBefore') => {
     const wrap = document.createElement('label'); wrap.className = 'xy-filter-field'; wrap.append(label);
     const input = document.createElement('input'); input.type = 'date'; input.value = filter[key] || '';
-    input.addEventListener('change', () => { filter = { ...filter, [key]: input.value || undefined }; persistFilter(); });
+    input.addEventListener('change', () => { filter = { ...filter, [key]: input.value || undefined, publishedPreset: undefined }; persistFilter(); filterRoot?.remove(); filterRoot = null; insightNode = null; activeFilterNode = null; ensureToolbar(); recomputeOpportunities(); });
     wrap.append(input); return wrap;
   };
 
@@ -205,7 +213,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
     const feed = document.querySelector<HTMLElement>('[class*="feeds-list-container"]'); if (!feed?.parentElement) return;
     const root = document.createElement('section'); root.className = 'xy-filter'; root.setAttribute('aria-label', '机会指标筛选'); root.dataset.filterEnabled = String(filterEnabled);
     const head = document.createElement('div'); head.className = 'xy-filter-head';
-    const title = document.createElement('div'); title.className = 'xy-filter-title'; title.append('机会筛选'); countNode = document.createElement('span'); countNode.className = 'xy-filter-count'; countNode.textContent = '数据加载中'; title.append(countNode);
+    const title = document.createElement('div'); title.className = 'xy-filter-title'; title.append('机会筛选'); countNode = document.createElement('span'); countNode.className = 'xy-filter-count'; countNode.textContent = '数据加载中'; activeFilterNode = document.createElement('span'); activeFilterNode.className = 'xy-active-filter'; activeFilterNode.setAttribute('aria-live', 'polite'); title.append(countNode, activeFilterNode);
     const actions = document.createElement('div'); actions.className = 'xy-filter-actions';
     const toggle = document.createElement('label'); toggle.className = 'xy-filter-toggle';
     const toggleInput = document.createElement('input'); toggleInput.type = 'checkbox'; toggleInput.checked = filterEnabled; toggleInput.setAttribute('aria-label', '启用插件条件筛选');
@@ -225,8 +233,8 @@ export function startSearchEnhancer(signal: AbortSignal) {
       makeNumberField('想要率 ≥ %', 'minRatio', '例如 8'), makeNumberField('想要率 ≤ %', 'maxRatio', '不限')
     );
     const quickWrap = document.createElement('label'); quickWrap.className = 'xy-filter-field'; quickWrap.append('发布时间快捷范围');
-    const quick = document.createElement('select'); const quickOptions: Array<[string, string]> = [['','全部时间'],['7','近 7 天'],['30','近 1 个月'],['90','近 3 个月']]; quickOptions.forEach(([value, label]) => { const option = document.createElement('option'); option.value = value; option.textContent = label; quick.append(option); });
-    quick.addEventListener('change', () => { filter = { ...filter, publishedAfter: quick.value ? new Date(Date.now() - Number(quick.value) * 86400000).toISOString().slice(0, 10) : undefined, publishedBefore: undefined }; persistFilter(); root.remove(); filterRoot = null; insightNode = null; ensureToolbar(); recomputeOpportunities(); }); quickWrap.append(quick); body.append(quickWrap);
+    const quick = document.createElement('select'); const quickOptions: Array<[string, string]> = [['','全部时间'],['7','近 7 天'],['30','近 1 个月'],['90','近 3 个月']]; quickOptions.forEach(([value, label]) => { const option = document.createElement('option'); option.value = value; option.textContent = label; quick.append(option); }); quick.value = filter.publishedPreset ? String(filter.publishedPreset) : '';
+    quick.addEventListener('change', () => { const preset = quick.value ? Number(quick.value) as 7 | 30 | 90 : undefined; filter = { ...filter, publishedPreset: preset, publishedAfter: preset ? new Date(Date.now() - preset * 86400000).toISOString().slice(0, 10) : undefined, publishedBefore: undefined }; persistFilter(); root.remove(); filterRoot = null; insightNode = null; activeFilterNode = null; ensureToolbar(); recomputeOpportunities(); }); quickWrap.append(quick); body.append(quickWrap);
     const sortWrap = document.createElement('label'); sortWrap.className = 'xy-filter-field'; sortWrap.append('排序');
     const select = document.createElement('select'); const sortOptions: Array<[InterestSort, string]> = [['default','默认顺序'],['score-desc','机会得分从高到低'],['profit-desc','单件净利润从高到低'],['ratio-desc','想要率从高到低'],['wants-desc','想要数从高到低'],['views-desc','浏览量从高到低']]; sortOptions.forEach(([value, text]) => { const option = document.createElement('option'); option.value = value; option.textContent = text; select.append(option); }); select.value = filter.sort;
     select.addEventListener('change', () => { filter = { ...filter, sort: select.value as InterestSort }; persistFilter(); }); sortWrap.append(select); body.append(sortWrap);
@@ -241,12 +249,12 @@ export function startSearchEnhancer(signal: AbortSignal) {
     });
     search.addEventListener('click', () => { if (!filterEnabled) return; void chrome.storage.local.set({ [FILTER_KEY]: filter }); recomputeOpportunities(); search.textContent = '已搜索'; window.setTimeout(() => { if (search.isConnected) search.textContent = '搜索'; }, 900); });
     exportButton.addEventListener('click', exportAnalysis);
-    reset.addEventListener('click', () => { filter = { ...defaultInterestFilter }; filterEnabled = false; profitConfig = { ...defaultProfit }; void chrome.storage.local.remove([FILTER_KEY, FILTER_ENABLED_KEY, PROFIT_KEY]); root.remove(); filterRoot = null; countNode = null; insightNode = null; ensureToolbar(); recomputeOpportunities(); });
+    reset.addEventListener('click', () => { filter = { ...defaultInterestFilter }; filterEnabled = false; profitConfig = { ...defaultProfit }; void chrome.storage.local.remove([FILTER_KEY, FILTER_ENABLED_KEY, PROFIT_KEY]); root.remove(); filterRoot = null; countNode = null; insightNode = null; activeFilterNode = null; ensureToolbar(); recomputeOpportunities(); });
     collapse.addEventListener('click', () => { const collapsed = root.dataset.collapsed !== 'true'; root.dataset.collapsed = String(collapsed); collapse.textContent = collapsed ? '展开' : '收起'; collapse.setAttribute('aria-expanded', String(!collapsed)); });
     root.append(head, body); feed.parentElement.insertBefore(root, feed); filterRoot = root; applyFilter();
   };
 
-  void chrome.storage.local.get([FILTER_KEY, FILTER_ENABLED_KEY, PROFIT_KEY]).then(result => { const saved = result[FILTER_KEY] as InterestFilter | undefined; const savedProfit = result[PROFIT_KEY] as ProfitConfig | undefined; if (saved) filter = { ...defaultInterestFilter, ...saved }; filterEnabled = result[FILTER_ENABLED_KEY] === true; if (savedProfit) profitConfig = { ...defaultProfit, ...savedProfit }; filterRoot?.remove(); filterRoot = null; insightNode = null; ensureToolbar(); recomputeOpportunities(); });
+  void chrome.storage.local.get([FILTER_KEY, FILTER_ENABLED_KEY, PROFIT_KEY]).then(result => { const saved = result[FILTER_KEY] as InterestFilter | undefined; const savedProfit = result[PROFIT_KEY] as ProfitConfig | undefined; if (saved) filter = { ...defaultInterestFilter, ...saved }; filterEnabled = result[FILTER_ENABLED_KEY] === true; if (savedProfit) profitConfig = { ...defaultProfit, ...savedProfit }; filterRoot?.remove(); filterRoot = null; insightNode = null; activeFilterNode = null; ensureToolbar(); recomputeOpportunities(); });
   window.addEventListener('message', event => {
     const response = event.data as DetailResponse;
     if (event.source !== window || response?.source !== 'XY_RADAR' || response.type !== 'DETAIL_RESPONSE') return;
