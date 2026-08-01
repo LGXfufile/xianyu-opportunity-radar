@@ -1,10 +1,12 @@
-import { BarChart3, Bookmark, Check, ChevronRight, Compass, Database, RotateCcw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
+import { BarChart3, Bookmark, Check, ChevronRight, Compass, Database, ExternalLink, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, Trash2, TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { buildOpportunities, directionPresets, initialOpportunities } from './data';
 import { FeedbackBar, LoadingState, OpportunityCard, ScoreRing } from './components';
 import { calculateProfit } from './scoring';
 import { clearWatchlist, loadWatchlist, removeWatchItem, saveWatchItem } from './storage';
 import type { Feedback, Opportunity, WatchItem } from './types';
+import { loadMonitors, monitorDelta, removeMonitor } from './monitoringClient';
+import type { MonitorSummary } from './monitoringTypes';
 
 type Tab = 'discover' | 'opportunities' | 'watchlist' | 'settings';
 
@@ -15,6 +17,8 @@ export function RadarApp() {
   const [results, setResults] = useState<Opportunity[]>(initialOpportunities);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
+  const [monitors, setMonitors] = useState<MonitorSummary[]>([]);
+  const [monitorLoading, setMonitorLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [price, setPrice] = useState(49);
   const [cost, setCost] = useState(4);
@@ -23,7 +27,14 @@ export function RadarApp() {
   const [refundRate, setRefundRate] = useState(5);
   const [checks, setChecks] = useState([true, true, true, false]);
 
-  useEffect(() => { loadWatchlist().then(setWatchlist).catch(error => setFeedback({ kind: 'error', message: error.message })); }, []);
+  const refreshMonitors = async () => {
+    setMonitorLoading(true);
+    try { setMonitors(await loadMonitors()); }
+    catch (error) { setFeedback({ kind: 'error', message: error instanceof Error ? error.message : '读取监控数据库失败' }); }
+    finally { setMonitorLoading(false); }
+  };
+
+  useEffect(() => { loadWatchlist().then(setWatchlist).catch(error => setFeedback({ kind: 'error', message: error.message })); void refreshMonitors(); }, []);
 
   const profit = useMemo(() => {
     try { return calculateProfit({ price, variable: cost, hours, hourlyRate, refundRate }); }
@@ -91,12 +102,20 @@ export function RadarApp() {
       </>}
 
       {tab === 'watchlist' && <section>
-        <div className="section-heading"><div><span className="eyebrow">本地保存</span><h2>{watchlist.length ? `${watchlist.length} 个观察项` : '还没有收藏机会'}</h2></div>{watchlist.length > 0 && <button className="icon-button danger" onClick={async () => { await clearWatchlist(); setWatchlist([]); setFeedback({ kind: 'info', message: '本地观察列表已清空。' }); }} aria-label="清空观察列表"><Trash2 size={17} /></button>}</div>
-        {watchlist.length === 0 ? <div className="empty"><Bookmark size={28} /><p>在机会卡片点击“收藏并观察”，下次会显示变化。</p><button className="secondary" onClick={() => setTab('opportunities')}>查看候选机会</button></div> : <div className="watch-list">{watchlist.map(item => <div key={item.id}><div><strong>{item.title}</strong><span>机会分 {item.score} · {new Date(item.savedAt).toLocaleDateString('zh-CN')}</span></div><button onClick={() => remove(item.id)} aria-label={`删除${item.title}`}><Trash2 size={16} /></button></div>)}</div>}
+        <div className="section-heading"><div><span className="eyebrow">IndexedDB · 浏览即更新</span><h2>{monitors.length ? `${monitors.length} 个商品监控中` : '还没有监控商品'}</h2></div><button className="icon-button" disabled={monitorLoading} onClick={refreshMonitors} aria-label="刷新监控数据"><RefreshCw className={monitorLoading ? 'spin' : ''} size={17} /></button></div>
+        {monitors.length === 0 ? <div className="empty monitor-empty"><TrendingUp size={28} /><p>在闲鱼搜索结果中点击“＋ 监控”，每次再次看到商品时会记录真实变化。</p></div> : <div className="monitor-list">{monitors.map(item => {
+          const delta = monitorDelta(item); const latest = item.latest;
+          return <article key={item.itemId} className="monitor-card">
+            <div className="monitor-card-head"><div><strong>{item.title}</strong><span>{item.snapshotCount} 次快照 · {latest ? new Date(latest.capturedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '等待首次数据'}</span></div><span className="monitor-score">{latest?.score ?? '—'}</span></div>
+            {latest && <div className="monitor-metrics"><span>¥{latest.price}</span><span>{latest.wants} 想要 <b>{delta.wants > 0 ? `+${delta.wants}` : delta.wants || ''}</b></span><span>{latest.views} 浏览 <b>{delta.views > 0 ? `+${delta.views}` : delta.views || ''}</b></span><span>{(latest.ratio * 100).toFixed(1)}%</span></div>}
+            <div className="monitor-actions"><a href={item.url} target="_blank" rel="noreferrer">查看商品 <ExternalLink size={13} /></a><button onClick={async () => { await removeMonitor(item.itemId); await refreshMonitors(); setFeedback({ kind: 'info', message: '已停止监控并删除历史快照。' }); }}><Trash2 size={13} />停止监控</button></div>
+          </article>;
+        })}</div>}
+        {watchlist.length > 0 && <><div className="subsection-title"><span>概念机会收藏</span><button onClick={async () => { await clearWatchlist(); setWatchlist([]); }} aria-label="清空概念机会收藏">清空</button></div><div className="watch-list">{watchlist.map(item => <div key={item.id}><div><strong>{item.title}</strong><span>机会分 {item.score} · {new Date(item.savedAt).toLocaleDateString('zh-CN')}</span></div><button onClick={() => remove(item.id)} aria-label={`删除${item.title}`}><Trash2 size={16} /></button></div>)}</div></>}
       </section>}
 
       {tab === 'settings' && <>
-        <section className="settings-card"><Database /><div><strong>本地优先</strong><p>收藏和快照保存在浏览器本地。当前样本库版本不会上传页面数据。</p></div><span className="status-dot">已启用</span></section>
+        <section className="settings-card"><Database /><div><strong>监控数据库</strong><p>商品与历史快照保存在扩展 IndexedDB，不上传闲鱼登录态；相同数据10分钟内自动去重。</p></div><span className="status-dot">已启用</span></section>
         <section className="settings-card"><ShieldCheck /><div><strong>合规保护</strong><p>高风险虚拟产品会被限制推荐，不提供规避平台审核的方法。</p></div><span className="status-dot">已启用</span></section>
         <section className="checklist"><span className="eyebrow">发布前自检</span><h2>四项都通过，才进入验证。</h2>{['内容由我原创或已获得授权', '不含机构水印、出版物或付费课程', '不售卖破解软件、共享账号或资格', '交付边界、售后和退款规则已写清'].map((label, index) => <button key={label} className={checks[index] ? 'checked' : ''} onClick={() => setChecks(values => values.map((value, i) => i === index ? !value : value))}><span>{checks[index] && <Check size={14} />}</span>{label}</button>)}</section>
       </>}

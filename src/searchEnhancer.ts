@@ -1,6 +1,7 @@
 import { calculateInterestMetric, formatPercent } from './interestRatio';
 import { compareInterestMetrics, defaultInterestFilter, matchesInterestFilter, type FilterableMetric, type InterestFilter, type InterestSort } from './interestFilters';
 import { calculateMarketContext, calculateOpportunityScore } from './opportunityScore';
+import type { MonitorMessage, MonitorResponse, MonitorSummary, MonitoredProduct, ProductSnapshot } from './monitoringTypes';
 
 type DetailData = { wants: number; views: number; fetchedAt: number; createdAt?: number | string; sellerId?: string; sellerSold?: number; sellerItems?: number };
 type DetailResponse = { source: 'XY_RADAR'; type: 'DETAIL_RESPONSE'; requestId: string; ok: boolean; wants?: number; views?: number; createdAt?: number | string; sellerId?: string | number; sellerSold?: number; sellerItems?: number; error?: string };
@@ -56,6 +57,12 @@ function parsePrice(card: HTMLElement) {
   return Number.isFinite(value) ? value : 0;
 }
 
+async function sendMonitor<T>(message: MonitorMessage) {
+  const response = await chrome.runtime.sendMessage(message) as MonitorResponse<T>;
+  if (!response?.ok) throw new Error(response?.error || '监控操作失败');
+  return response.data;
+}
+
 function renderError(container: HTMLElement, error: unknown, onRetry: () => void) {
   container.className = 'xy-interest xy-interest--error';
   container.innerHTML = '';
@@ -76,7 +83,7 @@ function addStyles() {
     .xy-interest strong{font-size:12px;color:#1e5b43;white-space:nowrap}.xy-interest span{opacity:.82}.xy-interest--loading{animation:xy-pulse 1.2s ease-in-out infinite}.xy-interest--high{background:#dff2e6;border-color:#2d74534a}.xy-interest--medium{background:#edf3e8}.xy-interest--low{background:#f4f2eb}.xy-interest--insufficient{background:#f2f3f3}.xy-interest--error{background:#f8e8e6;color:#8a3232;justify-content:space-between}.xy-interest button{border:0;background:transparent;color:inherit;font-weight:700;cursor:pointer}@keyframes xy-pulse{50%{opacity:.55}}@media(prefers-color-scheme:dark){.xy-interest{background:#202723;color:#b8c1bc}.xy-interest strong{color:#81c5a2}.xy-interest--error{background:#3d2725;color:#f1aaa4}}
     .xy-filter{grid-column:1/-1;margin:0 0 18px;padding:14px 16px;border:1px solid #1c262117;border-radius:16px;background:#fffffff2;box-shadow:0 8px 28px #16231c12;font:13px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#17201c}
     .xy-filter-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.xy-filter-title{display:flex;align-items:center;gap:9px;font-weight:750}.xy-filter-count{color:#1e5b43;background:#e4f3ea;border-radius:999px;padding:3px 8px;font-size:11px}.xy-filter-actions{display:flex;gap:6px}.xy-filter button{border:1px solid #1c262117;background:#fff;border-radius:9px;padding:6px 9px;cursor:pointer;color:inherit}.xy-filter .xy-filter-search{background:#17201c;color:#fff;border-color:#17201c;padding-inline:14px;font-weight:750;box-shadow:0 4px 12px #17201c24}.xy-filter .xy-filter-search:hover{background:#27332d}.xy-filter .xy-filter-search:active{transform:scale(.97)}.xy-filter-body{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin-top:12px}.xy-filter-field{display:grid;gap:4px;color:#68716c;font-size:11px}.xy-filter-field input,.xy-filter-field select{width:100%;border:1px solid #1c26211f;background:#fff;border-radius:9px;padding:8px;color:#17201c;font:12px inherit;outline:none}.xy-filter-field input:focus,.xy-filter-field select:focus{border-color:#2d7453;box-shadow:0 0 0 3px #2d74531c}.xy-filter-check{display:flex;align-items:center;gap:7px;color:#48514c;font-size:12px}.xy-filter-check input{accent-color:#1e5b43}.xy-filter-note{grid-column:1/-1;color:#7a817d;font-size:11px}.xy-filter[data-collapsed="true"] .xy-filter-body{display:none}@media(max-width:900px){.xy-filter-body{grid-template-columns:repeat(2,minmax(120px,1fr))}}@media(prefers-color-scheme:dark){.xy-filter{background:#1d2420f2;color:#f1f5f2;border-color:#ffffff17}.xy-filter button,.xy-filter-field input,.xy-filter-field select{background:#202723;color:#f1f5f2;border-color:#ffffff17}.xy-filter .xy-filter-search{background:#e9f1ec;color:#152019;border-color:#e9f1ec}.xy-filter-count{background:#233f31;color:#81c5a2}}
-    .xy-opportunity{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;padding-top:5px;margin-top:2px;border-top:1px solid #1e5b4320}.xy-opportunity b{font-size:12px}.xy-opportunity small{opacity:.76}.xy-opportunity--blue b{color:#087a45}.xy-opportunity--avoid b{color:#8a4b32}.xy-profit-title{grid-column:1/-1;padding-top:3px;font-size:12px;font-weight:750}.xy-filter-body{grid-template-columns:repeat(5,minmax(110px,1fr))}.xy-market-insight{grid-column:1/-1;padding:9px 11px;border-radius:10px;background:#eef5f0;color:#315342;font-size:12px}.xy-filter-export{white-space:nowrap}@media(prefers-color-scheme:dark){.xy-opportunity--blue b{color:#7ee2ae}.xy-market-insight{background:#23332a;color:#a8d6bd}}
+    .xy-opportunity{width:100%;display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 6px;padding-top:5px;margin-top:2px;border-top:1px solid #1e5b4320}.xy-opportunity b{font-size:12px}.xy-opportunity small{grid-column:1/2;opacity:.76}.xy-opportunity--blue b{color:#087a45}.xy-opportunity--avoid b{color:#8a4b32}.xy-monitor-button{grid-column:2;grid-row:1/3;border:1px solid #1e5b4330!important;background:#fff!important;color:#1e5b43!important;border-radius:7px!important;padding:5px 7px!important;font-size:10px!important}.xy-monitor-button[data-active="true"]{background:#1e5b43!important;color:#fff!important}.xy-monitor-button:disabled{opacity:.6;cursor:wait}.xy-profit-title{grid-column:1/-1;padding-top:3px;font-size:12px;font-weight:750}.xy-filter-body{grid-template-columns:repeat(5,minmax(110px,1fr))}.xy-market-insight{grid-column:1/-1;padding:9px 11px;border-radius:10px;background:#eef5f0;color:#315342;font-size:12px}.xy-filter-export{white-space:nowrap}@media(prefers-color-scheme:dark){.xy-opportunity--blue b{color:#7ee2ae}.xy-market-insight{background:#23332a;color:#a8d6bd}.xy-monitor-button{background:#26312b!important}}
     .xy-filter-toggle{display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:999px;background:#f1f3f1;color:#68716c;font-size:12px;cursor:pointer;white-space:nowrap}.xy-filter-toggle input{width:16px;height:16px;accent-color:#1e5b43}.xy-filter[data-filter-enabled="false"] .xy-filter-body{opacity:.48;pointer-events:none;filter:saturate(.6)}.xy-filter[data-filter-enabled="false"] .xy-filter-search{opacity:.5;cursor:not-allowed}.xy-filter[data-filter-enabled="true"] .xy-filter-toggle{background:#e2f2e8;color:#1e5b43;font-weight:700}
     .xy-active-filter{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:#eef1ef;color:#59635e;font-size:11px;font-weight:650}.xy-filter[data-filter-enabled="true"] .xy-active-filter{background:#173e2d;color:#fff}.xy-active-filter::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.72}
   `;
@@ -93,6 +100,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
   let activeFilterNode: HTMLElement | null = null;
   let insightNode: HTMLElement | null = null;
   const loaded = new Map<HTMLAnchorElement, DetailData & { cached: boolean }>();
+  const monitoredIds = new Set<string>();
 
   const cardMetric = (card: HTMLAnchorElement): FilterableMetric | null => {
     const wants = Number(card.dataset.xyWants), views = Number(card.dataset.xyViews), ratio = Number(card.dataset.xyRatio), index = Number(card.dataset.xyIndex);
@@ -144,6 +152,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
       const listingLoadSignal = data.sellerItems === undefined ? 50 : data.sellerItems <= 30 ? 72 : data.sellerItems <= 100 ? 55 : 35;
       const accessibilityScore = newListingSignal * .45 + smallSellerSignal * .35 + listingLoadSignal * .2;
       const result = calculateOpportunityScore({ ...data, trustedRatio: metric.trustedRatio, price, ...profitConfig, competitionScore: context.competitionScore, accessibilityScore });
+      const itemId = new URL(card.href).searchParams.get('id') || '';
       card.dataset.xyPrice = String(price); card.dataset.xyScore = String(result.score); card.dataset.xyProfit = String(result.netProfit); card.dataset.xyBlue = String(result.verdict === 'blue-ocean');
       if (Number.isFinite(created)) card.dataset.xyPublished = String(created); else delete card.dataset.xyPublished;
       container.querySelector('.xy-opportunity')?.remove();
@@ -152,7 +161,19 @@ export function startSearchEnhancer(signal: AbortSignal) {
       const profit = document.createElement('small');
       const publishedLabel = Number.isFinite(created) ? new Date(created).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '时间未知';
       profit.textContent = `¥${price.toFixed(0)}｜净利 ¥${result.netProfit.toFixed(0)}｜${result.margin.toFixed(0)}%｜${publishedLabel}`;
-      row.append(score, profit); container.append(row);
+      const monitor = document.createElement('button'); monitor.type = 'button'; monitor.className = 'xy-monitor-button'; monitor.dataset.active = String(monitoredIds.has(itemId)); monitor.textContent = monitoredIds.has(itemId) ? '监控中' : '＋ 监控'; monitor.setAttribute('aria-label', `${monitoredIds.has(itemId) ? '取消监控' : '监控'}${card.querySelector<HTMLElement>('[class*="main-title"]')?.innerText || '商品'}`);
+      const snapshot: ProductSnapshot = { itemId, capturedAt: Date.now(), price, wants: data.wants, views: data.views, ratio: metric.rawRatio, score: result.score, netProfit: result.netProfit };
+      const product: MonitoredProduct = { itemId, title: card.querySelector<HTMLElement>('[class*="main-title"]')?.innerText.replace(/\s+/g, ' ').trim() || `商品 ${itemId}`, url: card.href, imageUrl: card.querySelector<HTMLImageElement>('[class*="feeds-image"]')?.src, addedAt: Date.now(), updatedAt: Date.now() };
+      monitor.addEventListener('click', event => {
+        event.preventDefault(); event.stopPropagation(); monitor.disabled = true;
+        const action = monitoredIds.has(itemId) ? sendMonitor<void>({ type: 'MONITOR_REMOVE', itemId }) : sendMonitor<void>({ type: 'MONITOR_UPSERT', product, snapshot });
+        void action.then(() => { if (monitoredIds.has(itemId)) monitoredIds.delete(itemId); else monitoredIds.add(itemId); recomputeOpportunities(); }).catch(error => { monitor.textContent = error instanceof Error ? '操作失败' : '重试'; }).finally(() => { monitor.disabled = false; });
+      });
+      row.append(score, profit, monitor); container.append(row);
+      if (monitoredIds.has(itemId)) {
+        const signature = `${price}:${data.wants}:${data.views}:${result.score}`;
+        if (card.dataset.xyMonitorSnapshot !== signature) { card.dataset.xyMonitorSnapshot = signature; void sendMonitor<boolean>({ type: 'MONITOR_SNAPSHOT', snapshot }).catch(() => { delete card.dataset.xyMonitorSnapshot; }); }
+      }
       container.title = `需求 ${result.demand}｜竞争友好 ${result.competition}｜新卖家进入 ${result.accessibility}｜供需缺口 ${result.gap}｜利润 ${result.profit}${result.blockers.length ? `；未达蓝海：${result.blockers.join('、')}` : '；达到蓝海候选硬门槛。建议小单验证，不能保证7–15天成交。'}`;
     });
     const allMetrics = [...loaded.keys()].map(cardMetric).filter((item): item is FilterableMetric => !!item);
@@ -310,6 +331,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
     if (savedProfit) profitConfig = { ...defaultProfit, ...savedProfit };
     filterRoot?.remove(); filterRoot = null; insightNode = null; activeFilterNode = null; ensureToolbar(); recomputeOpportunities();
   });
+  void sendMonitor<MonitorSummary[]>({ type: 'MONITOR_LIST' }).then(items => { items.forEach(item => monitoredIds.add(item.itemId)); recomputeOpportunities(); }).catch(() => undefined);
   const mutation = new MutationObserver(() => { ensureToolbar(); scan(); }); mutation.observe(document.body, { childList: true, subtree: true }); ensureToolbar(); scan();
   signal.addEventListener('abort', () => mutation.disconnect());
 }
