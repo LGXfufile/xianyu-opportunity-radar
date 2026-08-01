@@ -8,7 +8,10 @@ declare global {
 
 type MtopClient = {
   config: Record<string, unknown>;
-  request(options: Record<string, unknown>): Promise<{ ret?: string[]; data?: { itemDO?: { wantCnt?: number; browseCnt?: number } } }>;
+  request(options: Record<string, unknown>): Promise<{ ret?: string[]; data?: {
+    itemDO?: { wantCnt?: number; browseCnt?: number; gmtCreate?: number | string };
+    sellerDO?: { sellerId?: string | number; hasSoldNumInteger?: number; itemCount?: number };
+  } }>;
 };
 
 export default defineContentScript({
@@ -44,11 +47,15 @@ export default defineContentScript({
         });
         const item = response.data?.itemDO;
         if (!item || !Number.isFinite(item.wantCnt) || !Number.isFinite(item.browseCnt)) throw new Error('商品未返回完整热度数据');
-        window.postMessage({ source: 'XY_RADAR', type: 'DETAIL_RESPONSE', requestId: request.requestId, ok: true, wants: item.wantCnt, views: item.browseCnt }, '*');
+        const seller = response.data?.sellerDO;
+        window.postMessage({
+          source: 'XY_RADAR', type: 'DETAIL_RESPONSE', requestId: request.requestId, ok: true,
+          wants: item.wantCnt, views: item.browseCnt, createdAt: item.gmtCreate,
+          sellerId: seller?.sellerId, sellerSold: seller?.hasSoldNumInteger, sellerItems: seller?.itemCount
+        }, '*');
       } catch (error) {
         window.postMessage({ source: 'XY_RADAR', type: 'DETAIL_RESPONSE', requestId: request.requestId, ok: false, error: error instanceof Error ? error.message : '热度数据获取失败' }, '*');
       }
     });
   }
 });
-
