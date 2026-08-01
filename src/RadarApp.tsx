@@ -1,6 +1,6 @@
 import { BarChart3, Bookmark, Check, ChevronRight, Compass, Database, RotateCcw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { directionPresets, seedOpportunities } from './data';
+import { buildOpportunities, directionPresets, initialOpportunities } from './data';
 import { FeedbackBar, LoadingState, OpportunityCard, ScoreRing } from './components';
 import { calculateProfit } from './scoring';
 import { clearWatchlist, loadWatchlist, removeWatchItem, saveWatchItem } from './storage';
@@ -10,9 +10,9 @@ type Tab = 'discover' | 'opportunities' | 'watchlist' | 'settings';
 
 export function RadarApp() {
   const [tab, setTab] = useState<Tab>('discover');
-  const [query, setQuery] = useState('美甲店经营');
+  const [query, setQuery] = useState('工业产品');
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<Opportunity[]>(seedOpportunities);
+  const [results, setResults] = useState<Opportunity[]>(initialOpportunities);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function RadarApp() {
     setLoading(true); setFeedback(null);
     try {
       await new Promise((resolve, reject) => setTimeout(() => clean === '模拟异常' ? reject(new Error('分析服务暂时不可用，已保留你的输入。')) : resolve(null), 700));
-      const adjusted = seedOpportunities.map((item, index) => ({ ...item, id: `${item.id}-${clean}`, audience: index === 0 ? clean : item.audience }));
+      const adjusted = buildOpportunities(clean);
       setResults(adjusted); setTab('opportunities');
       setFeedback({ kind: 'success', message: `已为“${clean}”找到 ${adjusted.length} 个值得验证的候选。` });
     } catch (error) {
@@ -60,17 +60,17 @@ export function RadarApp() {
   };
 
   return <div className="app-shell">
-    <header className="app-header"><div><span className="eyebrow">闲鱼机会雷达</span><h1>{tab === 'discover' ? '发现' : tab === 'opportunities' ? '机会' : tab === 'watchlist' ? '观察' : '设置'}</h1></div><span className="dev-badge">DEV · MOCK</span></header>
+    <header className="app-header"><div><span className="eyebrow">闲鱼机会雷达</span><h1>{tab === 'discover' ? '发现' : tab === 'opportunities' ? '机会' : tab === 'watchlist' ? '观察' : '设置'}</h1></div><span className="dev-badge">MVP · 样本库</span></header>
     {feedback && <FeedbackBar feedback={feedback} onClose={() => setFeedback(null)} />}
 
     <main className="app-content">
       {tab === 'discover' && <>
         <section className="hero-card">
           <div className="hero-copy"><span className="eyebrow">从一个具体场景开始</span><h2>寻找竞争更少、利润更清楚的产品。</h2><p>输入用户、职业或场景。我们会把需求证据、竞争、交付与合规放在同一张判断卡里。</p></div>
-          <div className="search-box"><Search size={18} /><input value={query} maxLength={40} onChange={event => setQuery(event.target.value)} onKeyDown={event => event.key === 'Enter' && analyze()} aria-label="产品机会方向" placeholder="例如：美甲店经营" /><button onClick={analyze} disabled={loading}>{loading ? '分析中' : '发现机会'}</button></div>
+          <div className="search-box"><Search size={18} /><input value={query} maxLength={40} onChange={event => setQuery(event.target.value)} onKeyDown={event => event.key === 'Enter' && analyze()} aria-label="产品机会方向" placeholder="例如：工业产品" /><button onClick={analyze} disabled={loading}>{loading ? '分析中' : '发现机会'}</button></div>
           <div className="preset-row">{directionPresets.map(item => <button key={item} onClick={() => setQuery(item)}>{item}</button>)}</div>
         </section>
-        {loading ? <LoadingState /> : <section className="market-summary"><div><span className="eyebrow">示例市场摘要</span><h2>需求正在发生，竞争仍可区分。</h2><p>基于24个有效样本。当前为Mock数据，正式版将显示来源与抓取时间。</p></div><ScoreRing score={82} /></section>}
+        {loading ? <LoadingState /> : <section className="market-summary"><div><span className="eyebrow">人工验证样本</span><h2>结果会随场景变化，不再复用固定卡片。</h2><p>工业方向基于本次闲鱼搜索快照；未覆盖方向会明确标记为待验证。</p></div><ScoreRing score={82} /></section>}
         <section className="three-grid"><div><Compass /><strong>具体需求</strong><span>从身份与场景切入</span></div><div><BarChart3 /><strong>真实利润</strong><span>计入售后和退款</span></div><div><ShieldCheck /><strong>合规优先</strong><span>高风险机会不推荐</span></div></section>
       </>}
 
@@ -96,7 +96,7 @@ export function RadarApp() {
       </section>}
 
       {tab === 'settings' && <>
-        <section className="settings-card"><Database /><div><strong>本地优先</strong><p>收藏和快照保存在浏览器本地。当前Mock版本不会上传页面数据。</p></div><span className="status-dot">已启用</span></section>
+        <section className="settings-card"><Database /><div><strong>本地优先</strong><p>收藏和快照保存在浏览器本地。当前样本库版本不会上传页面数据。</p></div><span className="status-dot">已启用</span></section>
         <section className="settings-card"><ShieldCheck /><div><strong>合规保护</strong><p>高风险虚拟产品会被限制推荐，不提供规避平台审核的方法。</p></div><span className="status-dot">已启用</span></section>
         <section className="checklist"><span className="eyebrow">发布前自检</span><h2>四项都通过，才进入验证。</h2>{['内容由我原创或已获得授权', '不含机构水印、出版物或付费课程', '不售卖破解软件、共享账号或资格', '交付边界、售后和退款规则已写清'].map((label, index) => <button key={label} className={checks[index] ? 'checked' : ''} onClick={() => setChecks(values => values.map((value, i) => i === index ? !value : value))}><span>{checks[index] && <Check size={14} />}</span>{label}</button>)}</section>
       </>}

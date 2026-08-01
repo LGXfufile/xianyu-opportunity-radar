@@ -2,6 +2,7 @@ node_modules
 .output
 .wxt
 .vercel
+闲鱼机会雷达-安装目录
 coverage
 *.log
 .DS_Store
