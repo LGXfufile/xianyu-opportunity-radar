@@ -8,7 +8,8 @@ type ProfitConfig = { unitCost: number; fulfillmentCost: number; reserveRate: nu
 
 const CACHE_PREFIX = 'interest:v2:';
 const CACHE_TTL = 24 * 60 * 60 * 1000;
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 1;
+const REQUEST_GAP_MS = 450;
 const FILTER_KEY = 'interest-filter-v1';
 const FILTER_ENABLED_KEY = 'interest-filter-enabled-v1';
 const PROFIT_KEY = 'opportunity-profit-v1';
@@ -103,6 +104,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
 
   const applyFilter = () => {
     const cards = [...document.querySelectorAll<HTMLAnchorElement>('a[data-xy-enhanced="true"]')];
+    const officialCount = document.querySelectorAll<HTMLAnchorElement>('a[href*="/item?"]').length;
     let matched = 0;
     const ranked = cards.map(card => ({ card, metric: cardMetric(card) })).filter((item): item is { card: HTMLAnchorElement; metric: FilterableMetric } => !!item.metric);
     ranked.sort((a, b) => compareInterestMetrics(a.metric, b.metric, filterEnabled ? filter.sort : 'default')).forEach((item, order) => { item.card.style.order = String(order); });
@@ -112,12 +114,12 @@ export function startSearchEnhancer(signal: AbortSignal) {
     });
     if (countNode) countNode.textContent = filterEnabled
       ? (ranked.length < cards.length ? `${matched}/${ranked.length} 命中 · ${ranked.length}/${cards.length} 已分析` : `${matched}/${ranked.length} 命中`)
-      : `${ranked.length}/${cards.length} 已分析 · 筛选未开启`;
+      : `分析未启动 · ${officialCount} 个官方结果`;
     if (activeFilterNode) {
       const presetLabels: Record<number, string> = { 7: '近 7 天', 30: '近 1 个月', 90: '近 3 个月' };
       const range = filter.publishedPreset ? presetLabels[filter.publishedPreset]
         : filter.publishedAfter || filter.publishedBefore ? `${filter.publishedAfter || '不限'} 至 ${filter.publishedBefore || '今天'}` : '全部时间';
-      activeFilterNode.textContent = filterEnabled ? `发布时间生效中：${range}` : `发布时间已设置：${range} · 开启后生效`;
+      activeFilterNode.textContent = filterEnabled ? `发布时间生效中：${range}` : `发布时间已设置：${range} · 启动后生效`;
     }
   };
 
@@ -157,7 +159,8 @@ export function startSearchEnhancer(signal: AbortSignal) {
     });
     const allMetrics = [...loaded.keys()].map(cardMetric).filter((item): item is FilterableMetric => !!item);
     const metrics = filterEnabled ? allMetrics.filter(metric => matchesInterestFilter(metric, filter)) : allMetrics;
-    if (insightNode && metrics.length) {
+    if (!filterEnabled && insightNode) insightNode.textContent = '分析尚未启动，不会请求商品详情数据；打开“启动分析”后再按条件筛选。';
+    else if (insightNode && metrics.length) {
       const sortedPrice = metrics.map(item => item.price).sort((a, b) => a - b);
       const medianPrice = sortedPrice[Math.floor(sortedPrice.length / 2)] ?? 0;
       const fresh = metrics.filter(item => item.publishedAt && Date.now() - item.publishedAt <= 30 * 86400000).length;
@@ -217,7 +220,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
     const actions = document.createElement('div'); actions.className = 'xy-filter-actions';
     const toggle = document.createElement('label'); toggle.className = 'xy-filter-toggle';
     const toggleInput = document.createElement('input'); toggleInput.type = 'checkbox'; toggleInput.checked = filterEnabled; toggleInput.setAttribute('aria-label', '启用插件条件筛选');
-    const toggleText = document.createElement('span'); toggleText.textContent = filterEnabled ? '筛选已开启' : '启用筛选'; toggle.append(toggleInput, toggleText);
+    const toggleText = document.createElement('span'); toggleText.textContent = filterEnabled ? '分析已开启' : '启动分析'; toggle.append(toggleInput, toggleText);
     const search = document.createElement('button'); search.type = 'button'; search.className = 'xy-filter-search'; search.textContent = '搜索'; search.setAttribute('aria-label', '按当前条件搜索商品');
     search.disabled = !filterEnabled;
     const exportButton = document.createElement('button'); exportButton.type = 'button'; exportButton.className = 'xy-filter-export'; exportButton.textContent = '导出分析'; exportButton.setAttribute('aria-label', '导出当前商品机会分析CSV');
@@ -241,11 +244,13 @@ export function startSearchEnhancer(signal: AbortSignal) {
     const check = document.createElement('label'); check.className = 'xy-filter-check'; const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = filter.sufficientOnly; checkbox.addEventListener('change', () => { filter = { ...filter, sufficientOnly: checkbox.checked }; persistFilter(); }); check.append(checkbox, '只看浏览量 ≥ 100 的充分样本'); body.append(check);
     const blueCheck = document.createElement('label'); blueCheck.className = 'xy-filter-check'; const blueBox = document.createElement('input'); blueBox.type = 'checkbox'; blueBox.checked = filter.blueOceanOnly; blueBox.addEventListener('change', () => { filter = { ...filter, blueOceanOnly: blueBox.checked }; persistFilter(); }); blueCheck.append(blueBox, '只看蓝海候选（≥75且通过硬门槛）'); body.append(blueCheck);
     const profitTitle = document.createElement('div'); profitTitle.className = 'xy-profit-title'; profitTitle.textContent = '利润假设 · 修改后立即重算'; body.append(profitTitle, makeProfitField('单件成本 ¥', 'unitCost', '5'), makeProfitField('履约成本 ¥', 'fulfillmentCost', '2'), makeProfitField('退款/平台预留 %', 'reserveRate', '5'));
-    insightNode = document.createElement('div'); insightNode.className = 'xy-market-insight'; insightNode.textContent = '正在生成市场快照…'; body.append(insightNode);
+    insightNode = document.createElement('div'); insightNode.className = 'xy-market-insight'; insightNode.textContent = filterEnabled ? '正在生成市场快照…' : '分析尚未启动，不会请求商品详情数据；打开“启动分析”后再按条件筛选。'; body.append(insightNode);
     const note = document.createElement('div'); note.className = 'xy-filter-note'; note.textContent = '机会得分：需求25% + 竞争25% + 新卖家进入性25% + 供需缺口15% + 利润10%。达到75分且样本、需求、竞争、进入性、净利均过线，才标记蓝海候选；时间未知的商品在启用发布时间筛选后会被排除。'; body.append(note);
     toggleInput.addEventListener('change', () => {
       filterEnabled = toggleInput.checked; root.dataset.filterEnabled = String(filterEnabled); search.disabled = !filterEnabled;
-      toggleText.textContent = filterEnabled ? '筛选已开启' : '启用筛选'; void chrome.storage.local.set({ [FILTER_ENABLED_KEY]: filterEnabled }); recomputeOpportunities();
+      toggleText.textContent = filterEnabled ? '分析已开启' : '启动分析'; void chrome.storage.local.set({ [FILTER_ENABLED_KEY]: filterEnabled });
+      if (filterEnabled) scan(); else stopAnalysis();
+      recomputeOpportunities();
     });
     search.addEventListener('click', () => { if (!filterEnabled) return; void chrome.storage.local.set({ [FILTER_KEY]: filter }); recomputeOpportunities(); search.textContent = '已搜索'; window.setTimeout(() => { if (search.isConnected) search.textContent = '搜索'; }, 900); });
     exportButton.addEventListener('click', exportAnalysis);
@@ -254,7 +259,6 @@ export function startSearchEnhancer(signal: AbortSignal) {
     root.append(head, body); feed.parentElement.insertBefore(root, feed); filterRoot = root; applyFilter();
   };
 
-  void chrome.storage.local.get([FILTER_KEY, FILTER_ENABLED_KEY, PROFIT_KEY]).then(result => { const saved = result[FILTER_KEY] as InterestFilter | undefined; const savedProfit = result[PROFIT_KEY] as ProfitConfig | undefined; if (saved) filter = { ...defaultInterestFilter, ...saved }; filterEnabled = result[FILTER_ENABLED_KEY] === true; if (savedProfit) profitConfig = { ...defaultProfit, ...savedProfit }; filterRoot?.remove(); filterRoot = null; insightNode = null; activeFilterNode = null; ensureToolbar(); recomputeOpportunities(); });
   window.addEventListener('message', event => {
     const response = event.data as DetailResponse;
     if (event.source !== window || response?.source !== 'XY_RADAR' || response.type !== 'DETAIL_RESPONSE') return;
@@ -267,29 +271,33 @@ export function startSearchEnhancer(signal: AbortSignal) {
     else task.reject(new Error(response.error || '热度数据获取失败'));
   }, { signal });
 
-  const queue: Array<{ card: HTMLAnchorElement; container: HTMLElement; itemId: string }> = [];
-  const seen = new WeakSet<HTMLAnchorElement>();
+  const queue: Array<{ card: HTMLAnchorElement; container: HTMLElement; itemId: string; generation: number }> = [];
+  let seen = new WeakSet<HTMLAnchorElement>();
   let nextIndex = 0;
   let active = 0;
+  let generation = 0;
 
   const runQueue = () => {
-    while (active < MAX_CONCURRENT && queue.length) {
+    while (filterEnabled && active < MAX_CONCURRENT && queue.length) {
       const task = queue.shift()!; active += 1;
       task.container.className = 'xy-interest xy-interest--loading'; task.container.textContent = '正在计算想要率…';
       const load = (): Promise<void> => {
         task.container.className = 'xy-interest xy-interest--loading'; task.container.textContent = '正在计算想要率…';
         return getDetail(task.itemId).then(data => {
+          if (!filterEnabled || task.generation !== generation || !task.card.isConnected) return;
           renderMetric(task.container, data);
           const metric = calculateInterestMetric(data.wants, data.views);
           task.card.dataset.xyWants = String(data.wants); task.card.dataset.xyViews = String(data.views); task.card.dataset.xyRatio = String(metric.rawRatio);
           loaded.set(task.card, data); recomputeOpportunities();
-        }).catch(error => renderError(task.container, error, () => { void load(); }));
+        }).catch(error => { if (filterEnabled && task.generation === generation) renderError(task.container, error, () => { void load(); }); });
       };
-      load().finally(() => { active -= 1; runQueue(); });
+      load().finally(() => { active -= 1; window.setTimeout(runQueue, REQUEST_GAP_MS); });
     }
   };
 
-  const scan = () => [...document.querySelectorAll<HTMLAnchorElement>('a[href*="/item?"]')].forEach(card => {
+  const scan = () => {
+    if (!filterEnabled) return;
+    [...document.querySelectorAll<HTMLAnchorElement>('a[href*="/item?"]')].forEach(card => {
     const itemId = new URL(card.href).searchParams.get('id');
     if (!itemId || seen.has(card)) return;
     seen.add(card);
@@ -301,7 +309,22 @@ export function startSearchEnhancer(signal: AbortSignal) {
       card.style.minHeight = '480px';
       (card.querySelector<HTMLElement>('[class*="feeds-content"]') || card).append(container);
     }
-    queue.push({ card, container, itemId }); runQueue();
+      queue.push({ card, container, itemId, generation }); runQueue();
+    });
+  };
+  const stopAnalysis = () => {
+    generation += 1; queue.length = 0; loaded.clear(); seen = new WeakSet<HTMLAnchorElement>(); nextIndex = 0;
+    document.querySelectorAll<HTMLAnchorElement>('a[data-xy-enhanced="true"]').forEach(card => {
+      card.querySelector('.xy-interest')?.remove();
+      ['xyEnhanced', 'xyIndex', 'xyWants', 'xyViews', 'xyRatio', 'xyPrice', 'xyScore', 'xyProfit', 'xyBlue', 'xyPublished'].forEach(key => delete card.dataset[key]);
+      card.style.removeProperty('height'); card.style.removeProperty('min-height'); card.style.removeProperty('order'); card.style.removeProperty('display');
+    });
+  };
+  void chrome.storage.local.get([FILTER_KEY, FILTER_ENABLED_KEY, PROFIT_KEY]).then(result => {
+    const saved = result[FILTER_KEY] as InterestFilter | undefined; const savedProfit = result[PROFIT_KEY] as ProfitConfig | undefined;
+    if (saved) filter = { ...defaultInterestFilter, ...saved }; filterEnabled = result[FILTER_ENABLED_KEY] === true;
+    if (savedProfit) profitConfig = { ...defaultProfit, ...savedProfit };
+    filterRoot?.remove(); filterRoot = null; insightNode = null; activeFilterNode = null; ensureToolbar(); if (filterEnabled) scan(); recomputeOpportunities();
   });
   const mutation = new MutationObserver(() => { ensureToolbar(); scan(); }); mutation.observe(document.body, { childList: true, subtree: true }); ensureToolbar(); scan();
   signal.addEventListener('abort', () => mutation.disconnect());
