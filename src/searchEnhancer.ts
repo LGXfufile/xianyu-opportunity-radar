@@ -60,8 +60,8 @@ function addStyles() {
   const style = document.createElement('style');
   style.id = 'xy-interest-styles';
   style.textContent = `
-    .xy-interest{margin-top:9px;padding:8px 10px;border-radius:10px;background:#f3f5f3;color:#48514c;display:grid;gap:2px;font:12px/1.35 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
-    .xy-interest strong{font-size:13px;color:#1e5b43}.xy-interest span{opacity:.78}.xy-interest--loading{animation:xy-pulse 1.2s ease-in-out infinite}.xy-interest--high{background:#e4f3ea}.xy-interest--medium{background:#edf3e8}.xy-interest--low{background:#f4f2eb}.xy-interest--insufficient{background:#f2f3f3}.xy-interest--error{background:#f8e8e6;color:#8a3232;grid-template-columns:1fr auto;align-items:center}.xy-interest button{border:0;background:transparent;color:inherit;font-weight:700;cursor:pointer}@keyframes xy-pulse{50%{opacity:.55}}@media(prefers-color-scheme:dark){.xy-interest{background:#202723;color:#b8c1bc}.xy-interest strong{color:#81c5a2}.xy-interest--error{background:#3d2725;color:#f1aaa4}}
+    .xy-interest{margin-top:7px;padding:6px 8px;border:1px solid #1e5b4324;border-radius:8px;background:#f3f5f3;color:#48514c;display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;min-height:30px;font:11px/1.25 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;position:relative;z-index:2}
+    .xy-interest strong{font-size:12px;color:#1e5b43;white-space:nowrap}.xy-interest span{opacity:.82}.xy-interest--loading{animation:xy-pulse 1.2s ease-in-out infinite}.xy-interest--high{background:#dff2e6;border-color:#2d74534a}.xy-interest--medium{background:#edf3e8}.xy-interest--low{background:#f4f2eb}.xy-interest--insufficient{background:#f2f3f3}.xy-interest--error{background:#f8e8e6;color:#8a3232;justify-content:space-between}.xy-interest button{border:0;background:transparent;color:inherit;font-weight:700;cursor:pointer}@keyframes xy-pulse{50%{opacity:.55}}@media(prefers-color-scheme:dark){.xy-interest{background:#202723;color:#b8c1bc}.xy-interest strong{color:#81c5a2}.xy-interest--error{background:#3d2725;color:#f1aaa4}}
   `;
   document.head.append(style);
 }
@@ -98,7 +98,12 @@ export function startSearchEnhancer(signal: AbortSignal) {
     if (!itemId || seen.has(itemId)) return;
     seen.add(itemId);
     let container = card.querySelector<HTMLElement>('.xy-interest');
-    if (!container) { container = document.createElement('div'); container.className = 'xy-interest'; card.append(container); }
+    if (!container) {
+      container = document.createElement('div'); container.className = 'xy-interest';
+      card.style.height = 'auto';
+      card.style.minHeight = '480px';
+      (card.querySelector<HTMLElement>('[class*="feeds-content"]') || card).append(container);
+    }
     queue.push({ card, container, itemId }); runQueue();
   });
   const mutation = new MutationObserver(scan); mutation.observe(document.body, { childList: true, subtree: true }); scan();
