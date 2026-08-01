@@ -6,7 +6,6 @@ type DetailResponse = { source: 'XY_RADAR'; type: 'DETAIL_RESPONSE'; requestId: 
 
 const CACHE_PREFIX = 'interest:';
 const CACHE_TTL = 24 * 60 * 60 * 1000;
-const MAX_ITEMS = 20;
 const MAX_CONCURRENT = 2;
 const FILTER_KEY = 'interest-filter-v1';
 const pending = new Map<string, { resolve: (value: DetailData) => void; reject: (error: Error) => void; timer: number }>();
@@ -90,7 +89,7 @@ export function startSearchEnhancer(signal: AbortSignal) {
       const metric = cardMetric(card); const visible = !metric || matchesInterestFilter(metric, filter);
       card.style.display = visible ? '' : 'none'; if (visible && metric) matched += 1;
     });
-    if (countNode) countNode.textContent = `${matched}/${ranked.length || MAX_ITEMS} 命中`;
+    if (countNode) countNode.textContent = ranked.length < cards.length ? `${matched}/${ranked.length} 命中 · ${ranked.length}/${cards.length} 已分析` : `${matched}/${ranked.length} 命中`;
   };
 
   const persistFilter = () => { void chrome.storage.local.set({ [FILTER_KEY]: filter }); applyFilter(); };
@@ -135,7 +134,8 @@ export function startSearchEnhancer(signal: AbortSignal) {
   }, { signal });
 
   const queue: Array<{ card: HTMLAnchorElement; container: HTMLElement; itemId: string }> = [];
-  const seen = new Set<string>();
+  const seen = new WeakSet<HTMLAnchorElement>();
+  let nextIndex = 0;
   let active = 0;
 
   const runQueue = () => {
@@ -155,11 +155,11 @@ export function startSearchEnhancer(signal: AbortSignal) {
     }
   };
 
-  const scan = () => [...document.querySelectorAll<HTMLAnchorElement>('a[href*="/item?"]')].slice(0, MAX_ITEMS).forEach(card => {
+  const scan = () => [...document.querySelectorAll<HTMLAnchorElement>('a[href*="/item?"]')].forEach(card => {
     const itemId = new URL(card.href).searchParams.get('id');
-    if (!itemId || seen.has(itemId)) return;
-    seen.add(itemId);
-    card.dataset.xyEnhanced = 'true'; card.dataset.xyIndex = String(seen.size - 1);
+    if (!itemId || seen.has(card)) return;
+    seen.add(card);
+    card.dataset.xyEnhanced = 'true'; card.dataset.xyIndex = String(nextIndex++);
     let container = card.querySelector<HTMLElement>('.xy-interest');
     if (!container) {
       container = document.createElement('div'); container.className = 'xy-interest';
