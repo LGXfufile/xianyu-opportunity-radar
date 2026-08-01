@@ -2,9 +2,11 @@ export type InterestSort = 'default' | 'score-desc' | 'profit-desc' | 'ratio-des
 export type InterestFilter = {
   minWants?: number; maxWants?: number; minViews?: number; maxViews?: number;
   minRatio?: number; maxRatio?: number; minPrice?: number; maxPrice?: number; minScore?: number;
+  publishedAfter?: string; publishedBefore?: string;
+  includeKeywords?: string; excludeKeywords?: string;
   sufficientOnly: boolean; blueOceanOnly: boolean; sort: InterestSort;
 };
-export type FilterableMetric = { wants: number; views: number; ratio: number; price: number; score: number; profit: number; blueOcean: boolean; index: number };
+export type FilterableMetric = { title?: string; wants: number; views: number; ratio: number; price: number; score: number; profit: number; publishedAt?: number; blueOcean: boolean; index: number };
 
 export const defaultInterestFilter: InterestFilter = { sufficientOnly: false, blueOceanOnly: false, sort: 'default' };
 
@@ -18,6 +20,20 @@ export function matchesInterestFilter(metric: FilterableMetric, filter: Interest
   if (filter.minPrice !== undefined && metric.price < filter.minPrice) return false;
   if (filter.maxPrice !== undefined && metric.price > filter.maxPrice) return false;
   if (filter.minScore !== undefined && metric.score < filter.minScore) return false;
+  if (filter.publishedAfter) {
+    const after = new Date(`${filter.publishedAfter}T00:00:00`).getTime();
+    if (!metric.publishedAt || metric.publishedAt < after) return false;
+  }
+  if (filter.publishedBefore) {
+    const before = new Date(`${filter.publishedBefore}T23:59:59.999`).getTime();
+    if (!metric.publishedAt || metric.publishedAt > before) return false;
+  }
+  const title = (metric.title || '').toLocaleLowerCase();
+  const splitKeywords = (value?: string) => (value || '').split(/[,，\n]/).map(item => item.trim().toLocaleLowerCase()).filter(Boolean);
+  const includes = splitKeywords(filter.includeKeywords);
+  const excludes = splitKeywords(filter.excludeKeywords);
+  if (includes.length && !includes.some(keyword => title.includes(keyword))) return false;
+  if (excludes.some(keyword => title.includes(keyword))) return false;
   if (filter.blueOceanOnly && !metric.blueOcean) return false;
   return !filter.sufficientOnly || metric.views >= 100;
 }

@@ -75,7 +75,7 @@ function addStyles() {
     .xy-interest strong{font-size:12px;color:#1e5b43;white-space:nowrap}.xy-interest span{opacity:.82}.xy-interest--loading{animation:xy-pulse 1.2s ease-in-out infinite}.xy-interest--high{background:#dff2e6;border-color:#2d74534a}.xy-interest--medium{background:#edf3e8}.xy-interest--low{background:#f4f2eb}.xy-interest--insufficient{background:#f2f3f3}.xy-interest--error{background:#f8e8e6;color:#8a3232;justify-content:space-between}.xy-interest button{border:0;background:transparent;color:inherit;font-weight:700;cursor:pointer}@keyframes xy-pulse{50%{opacity:.55}}@media(prefers-color-scheme:dark){.xy-interest{background:#202723;color:#b8c1bc}.xy-interest strong{color:#81c5a2}.xy-interest--error{background:#3d2725;color:#f1aaa4}}
     .xy-filter{grid-column:1/-1;margin:0 0 18px;padding:14px 16px;border:1px solid #1c262117;border-radius:16px;background:#fffffff2;box-shadow:0 8px 28px #16231c12;font:13px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#17201c}
     .xy-filter-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.xy-filter-title{display:flex;align-items:center;gap:9px;font-weight:750}.xy-filter-count{color:#1e5b43;background:#e4f3ea;border-radius:999px;padding:3px 8px;font-size:11px}.xy-filter-actions{display:flex;gap:6px}.xy-filter button{border:1px solid #1c262117;background:#fff;border-radius:9px;padding:6px 9px;cursor:pointer;color:inherit}.xy-filter .xy-filter-search{background:#17201c;color:#fff;border-color:#17201c;padding-inline:14px;font-weight:750;box-shadow:0 4px 12px #17201c24}.xy-filter .xy-filter-search:hover{background:#27332d}.xy-filter .xy-filter-search:active{transform:scale(.97)}.xy-filter-body{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin-top:12px}.xy-filter-field{display:grid;gap:4px;color:#68716c;font-size:11px}.xy-filter-field input,.xy-filter-field select{width:100%;border:1px solid #1c26211f;background:#fff;border-radius:9px;padding:8px;color:#17201c;font:12px inherit;outline:none}.xy-filter-field input:focus,.xy-filter-field select:focus{border-color:#2d7453;box-shadow:0 0 0 3px #2d74531c}.xy-filter-check{display:flex;align-items:center;gap:7px;color:#48514c;font-size:12px}.xy-filter-check input{accent-color:#1e5b43}.xy-filter-note{grid-column:1/-1;color:#7a817d;font-size:11px}.xy-filter[data-collapsed="true"] .xy-filter-body{display:none}@media(max-width:900px){.xy-filter-body{grid-template-columns:repeat(2,minmax(120px,1fr))}}@media(prefers-color-scheme:dark){.xy-filter{background:#1d2420f2;color:#f1f5f2;border-color:#ffffff17}.xy-filter button,.xy-filter-field input,.xy-filter-field select{background:#202723;color:#f1f5f2;border-color:#ffffff17}.xy-filter .xy-filter-search{background:#e9f1ec;color:#152019;border-color:#e9f1ec}.xy-filter-count{background:#233f31;color:#81c5a2}}
-    .xy-opportunity{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;padding-top:5px;margin-top:2px;border-top:1px solid #1e5b4320}.xy-opportunity b{font-size:12px}.xy-opportunity small{opacity:.76}.xy-opportunity--blue b{color:#087a45}.xy-opportunity--avoid b{color:#8a4b32}.xy-profit-title{grid-column:1/-1;padding-top:3px;font-size:12px;font-weight:750}.xy-filter-body{grid-template-columns:repeat(5,minmax(110px,1fr))}@media(prefers-color-scheme:dark){.xy-opportunity--blue b{color:#7ee2ae}}
+    .xy-opportunity{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;padding-top:5px;margin-top:2px;border-top:1px solid #1e5b4320}.xy-opportunity b{font-size:12px}.xy-opportunity small{opacity:.76}.xy-opportunity--blue b{color:#087a45}.xy-opportunity--avoid b{color:#8a4b32}.xy-profit-title{grid-column:1/-1;padding-top:3px;font-size:12px;font-weight:750}.xy-filter-body{grid-template-columns:repeat(5,minmax(110px,1fr))}.xy-market-insight{grid-column:1/-1;padding:9px 11px;border-radius:10px;background:#eef5f0;color:#315342;font-size:12px}.xy-filter-export{white-space:nowrap}@media(prefers-color-scheme:dark){.xy-opportunity--blue b{color:#7ee2ae}.xy-market-insight{background:#23332a;color:#a8d6bd}}
   `;
   document.head.append(style);
 }
@@ -86,12 +86,14 @@ export function startSearchEnhancer(signal: AbortSignal) {
   let profitConfig: ProfitConfig = { ...defaultProfit };
   let filterRoot: HTMLElement | null = null;
   let countNode: HTMLElement | null = null;
+  let insightNode: HTMLElement | null = null;
   const loaded = new Map<HTMLAnchorElement, DetailData & { cached: boolean }>();
 
   const cardMetric = (card: HTMLAnchorElement): FilterableMetric | null => {
     const wants = Number(card.dataset.xyWants), views = Number(card.dataset.xyViews), ratio = Number(card.dataset.xyRatio), index = Number(card.dataset.xyIndex);
-    const price = Number(card.dataset.xyPrice), score = Number(card.dataset.xyScore), profit = Number(card.dataset.xyProfit);
-    return [wants, views, ratio, price, score, profit, index].every(Number.isFinite) ? { wants, views, ratio, price, score, profit, blueOcean: card.dataset.xyBlue === 'true', index } : null;
+    const price = Number(card.dataset.xyPrice), score = Number(card.dataset.xyScore), profit = Number(card.dataset.xyProfit), publishedAt = card.dataset.xyPublished ? Number(card.dataset.xyPublished) : undefined;
+    const title = card.querySelector<HTMLElement>('[class*="main-title"]')?.innerText.replace(/\s+/g, ' ').trim();
+    return [wants, views, ratio, price, score, profit, index].every(Number.isFinite) ? { title, wants, views, ratio, price, score, profit, publishedAt, blueOcean: card.dataset.xyBlue === 'true', index } : null;
   };
 
   const applyFilter = () => {
@@ -106,10 +108,16 @@ export function startSearchEnhancer(signal: AbortSignal) {
     if (countNode) countNode.textContent = ranked.length < cards.length ? `${matched}/${ranked.length} 命中 · ${ranked.length}/${cards.length} 已分析` : `${matched}/${ranked.length} 命中`;
   };
 
-  const persistFilter = () => { void chrome.storage.local.set({ [FILTER_KEY]: filter }); applyFilter(); };
+  const persistFilter = () => { void chrome.storage.local.set({ [FILTER_KEY]: filter }); recomputeOpportunities(); };
 
   const recomputeOpportunities = () => {
-    const context = calculateMarketContext([...loaded.values()].map(data => ({ wants: data.wants, sellerId: data.sellerId })));
+    const words = (value?: string) => (value || '').split(/[,，\n]/).map(item => item.trim().toLocaleLowerCase()).filter(Boolean);
+    const included = words(filter.includeKeywords), excluded = words(filter.excludeKeywords);
+    const contextItems = [...loaded.entries()].filter(([card]) => {
+      const title = card.querySelector<HTMLElement>('[class*="main-title"]')?.innerText.toLocaleLowerCase() || '';
+      return (!included.length || included.some(word => title.includes(word))) && !excluded.some(word => title.includes(word));
+    }).map(([, data]) => ({ wants: data.wants, sellerId: data.sellerId }));
+    const context = calculateMarketContext(contextItems);
     loaded.forEach((data, card) => {
       const container = card.querySelector<HTMLElement>('.xy-interest');
       if (!container) return;
@@ -124,13 +132,25 @@ export function startSearchEnhancer(signal: AbortSignal) {
       const accessibilityScore = newListingSignal * .45 + smallSellerSignal * .35 + listingLoadSignal * .2;
       const result = calculateOpportunityScore({ ...data, trustedRatio: metric.trustedRatio, price, ...profitConfig, competitionScore: context.competitionScore, accessibilityScore });
       card.dataset.xyPrice = String(price); card.dataset.xyScore = String(result.score); card.dataset.xyProfit = String(result.netProfit); card.dataset.xyBlue = String(result.verdict === 'blue-ocean');
+      if (Number.isFinite(created)) card.dataset.xyPublished = String(created); else delete card.dataset.xyPublished;
       container.querySelector('.xy-opportunity')?.remove();
       const row = document.createElement('div'); row.className = `xy-opportunity xy-opportunity--${result.verdict === 'blue-ocean' ? 'blue' : result.verdict}`;
       const score = document.createElement('b'); score.textContent = `机会得分 ${result.score} · ${result.label}`;
-      const profit = document.createElement('small'); profit.textContent = `¥${price.toFixed(0)}｜净利 ¥${result.netProfit.toFixed(0)}｜${result.margin.toFixed(0)}%`;
+      const profit = document.createElement('small');
+      const publishedLabel = Number.isFinite(created) ? new Date(created).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '时间未知';
+      profit.textContent = `¥${price.toFixed(0)}｜净利 ¥${result.netProfit.toFixed(0)}｜${result.margin.toFixed(0)}%｜${publishedLabel}`;
       row.append(score, profit); container.append(row);
       container.title = `需求 ${result.demand}｜竞争友好 ${result.competition}｜新卖家进入 ${result.accessibility}｜供需缺口 ${result.gap}｜利润 ${result.profit}${result.blockers.length ? `；未达蓝海：${result.blockers.join('、')}` : '；达到蓝海候选硬门槛。建议小单验证，不能保证7–15天成交。'}`;
     });
+    const allMetrics = [...loaded.keys()].map(cardMetric).filter((item): item is FilterableMetric => !!item);
+    const metrics = allMetrics.filter(metric => matchesInterestFilter(metric, filter));
+    if (insightNode && metrics.length) {
+      const sortedPrice = metrics.map(item => item.price).sort((a, b) => a - b);
+      const medianPrice = sortedPrice[Math.floor(sortedPrice.length / 2)] ?? 0;
+      const fresh = metrics.filter(item => item.publishedAt && Date.now() - item.publishedAt <= 30 * 86400000).length;
+      const blue = metrics.filter(item => item.blueOcean).length;
+      insightNode.textContent = `市场快照：中位价 ¥${medianPrice.toFixed(0)} · 近30天新品 ${fresh}/${metrics.length} · 头部想要集中度 ${(context.top10Concentration * 100).toFixed(0)}% · 蓝海候选 ${blue}`;
+    } else if (insightNode) insightNode.textContent = '当前条件没有匹配商品，请放宽时间、价格或关键词范围。';
     applyFilter();
   };
 
@@ -149,6 +169,32 @@ export function startSearchEnhancer(signal: AbortSignal) {
     wrap.append(input); return wrap;
   };
 
+  const makeDateField = (label: string, key: 'publishedAfter' | 'publishedBefore') => {
+    const wrap = document.createElement('label'); wrap.className = 'xy-filter-field'; wrap.append(label);
+    const input = document.createElement('input'); input.type = 'date'; input.value = filter[key] || '';
+    input.addEventListener('change', () => { filter = { ...filter, [key]: input.value || undefined }; persistFilter(); });
+    wrap.append(input); return wrap;
+  };
+
+  const makeKeywordField = (label: string, key: 'includeKeywords' | 'excludeKeywords', placeholder: string) => {
+    const wrap = document.createElement('label'); wrap.className = 'xy-filter-field'; wrap.append(label);
+    const input = document.createElement('input'); input.type = 'text'; input.placeholder = placeholder; input.value = filter[key] || '';
+    input.addEventListener('input', () => { filter = { ...filter, [key]: input.value || undefined }; void chrome.storage.local.set({ [FILTER_KEY]: filter }); });
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') { recomputeOpportunities(); filterRoot?.querySelector<HTMLButtonElement>('.xy-filter-search')?.click(); } });
+    wrap.append(input); return wrap;
+  };
+
+  const exportAnalysis = () => {
+    const rows = [...document.querySelectorAll<HTMLAnchorElement>('a[data-xy-enhanced="true"]')].map(card => {
+      const metric = cardMetric(card); if (!metric) return null;
+      const title = card.querySelector<HTMLElement>('[class*="main-title"]')?.innerText.replace(/\s+/g, ' ').trim() || '';
+      return [title, metric.price, metric.wants, metric.views, (metric.ratio * 100).toFixed(2), metric.score, metric.profit.toFixed(2), metric.blueOcean ? '是' : '否', metric.publishedAt ? new Date(metric.publishedAt).toLocaleDateString('zh-CN') : '未知', card.href];
+    }).filter(Boolean) as Array<Array<string | number>>;
+    const csv = [['商品', '售价', '想要数', '浏览量', '想要率%', '机会得分', '预估净利润', '蓝海候选', '发布时间', '链接'], ...rows]
+      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })); link.download = `闲鱼机会分析-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
+  };
+
   const ensureToolbar = () => {
     if (filterRoot?.isConnected) return;
     const feed = document.querySelector<HTMLElement>('[class*="feeds-list-container"]'); if (!feed?.parentElement) return;
@@ -157,29 +203,37 @@ export function startSearchEnhancer(signal: AbortSignal) {
     const title = document.createElement('div'); title.className = 'xy-filter-title'; title.append('机会筛选'); countNode = document.createElement('span'); countNode.className = 'xy-filter-count'; countNode.textContent = '数据加载中'; title.append(countNode);
     const actions = document.createElement('div'); actions.className = 'xy-filter-actions';
     const search = document.createElement('button'); search.type = 'button'; search.className = 'xy-filter-search'; search.textContent = '搜索'; search.setAttribute('aria-label', '按当前条件搜索商品');
+    const exportButton = document.createElement('button'); exportButton.type = 'button'; exportButton.className = 'xy-filter-export'; exportButton.textContent = '导出分析'; exportButton.setAttribute('aria-label', '导出当前商品机会分析CSV');
     const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = '重置';
     const collapse = document.createElement('button'); collapse.type = 'button'; collapse.textContent = '收起'; collapse.setAttribute('aria-expanded', 'true');
-    actions.append(search, reset, collapse); head.append(title, actions);
+    actions.append(search, exportButton, reset, collapse); head.append(title, actions);
     const body = document.createElement('div'); body.className = 'xy-filter-body';
     body.append(
       makeNumberField('售价 ≥ ¥', 'minPrice', '例如 20'), makeNumberField('售价 ≤ ¥', 'maxPrice', '不限'), makeNumberField('机会得分 ≥', 'minScore', '蓝海 75'),
+      makeDateField('发布时间从', 'publishedAfter'), makeDateField('发布时间到', 'publishedBefore'),
+      makeKeywordField('标题必须包含', 'includeKeywords', '多个词用逗号'), makeKeywordField('标题排除词', 'excludeKeywords', '如 求购,维修'),
       makeNumberField('想要数 ≥', 'minWants', '不限'), makeNumberField('想要数 ≤', 'maxWants', '不限'), makeNumberField('浏览量 ≥', 'minViews', '建议 100'), makeNumberField('浏览量 ≤', 'maxViews', '不限'),
       makeNumberField('想要率 ≥ %', 'minRatio', '例如 8'), makeNumberField('想要率 ≤ %', 'maxRatio', '不限')
     );
+    const quickWrap = document.createElement('label'); quickWrap.className = 'xy-filter-field'; quickWrap.append('发布时间快捷范围');
+    const quick = document.createElement('select'); const quickOptions: Array<[string, string]> = [['','全部时间'],['7','近7天'],['30','近30天'],['90','近90天']]; quickOptions.forEach(([value, label]) => { const option = document.createElement('option'); option.value = value; option.textContent = label; quick.append(option); });
+    quick.addEventListener('change', () => { filter = { ...filter, publishedAfter: quick.value ? new Date(Date.now() - Number(quick.value) * 86400000).toISOString().slice(0, 10) : undefined, publishedBefore: undefined }; persistFilter(); root.remove(); filterRoot = null; insightNode = null; ensureToolbar(); recomputeOpportunities(); }); quickWrap.append(quick); body.append(quickWrap);
     const sortWrap = document.createElement('label'); sortWrap.className = 'xy-filter-field'; sortWrap.append('排序');
     const select = document.createElement('select'); const sortOptions: Array<[InterestSort, string]> = [['default','默认顺序'],['score-desc','机会得分从高到低'],['profit-desc','单件净利润从高到低'],['ratio-desc','想要率从高到低'],['wants-desc','想要数从高到低'],['views-desc','浏览量从高到低']]; sortOptions.forEach(([value, text]) => { const option = document.createElement('option'); option.value = value; option.textContent = text; select.append(option); }); select.value = filter.sort;
     select.addEventListener('change', () => { filter = { ...filter, sort: select.value as InterestSort }; persistFilter(); }); sortWrap.append(select); body.append(sortWrap);
     const check = document.createElement('label'); check.className = 'xy-filter-check'; const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = filter.sufficientOnly; checkbox.addEventListener('change', () => { filter = { ...filter, sufficientOnly: checkbox.checked }; persistFilter(); }); check.append(checkbox, '只看浏览量 ≥ 100 的充分样本'); body.append(check);
     const blueCheck = document.createElement('label'); blueCheck.className = 'xy-filter-check'; const blueBox = document.createElement('input'); blueBox.type = 'checkbox'; blueBox.checked = filter.blueOceanOnly; blueBox.addEventListener('change', () => { filter = { ...filter, blueOceanOnly: blueBox.checked }; persistFilter(); }); blueCheck.append(blueBox, '只看蓝海候选（≥75且通过硬门槛）'); body.append(blueCheck);
     const profitTitle = document.createElement('div'); profitTitle.className = 'xy-profit-title'; profitTitle.textContent = '利润假设 · 修改后立即重算'; body.append(profitTitle, makeProfitField('单件成本 ¥', 'unitCost', '5'), makeProfitField('履约成本 ¥', 'fulfillmentCost', '2'), makeProfitField('退款/平台预留 %', 'reserveRate', '5'));
-    const note = document.createElement('div'); note.className = 'xy-filter-note'; note.textContent = '机会得分：需求25% + 竞争25% + 新卖家进入性25% + 供需缺口15% + 利润10%。达到75分且样本、需求、竞争、进入性、净利均过线，才标记蓝海候选；建议先小单验证，不承诺成交。'; body.append(note);
-    search.addEventListener('click', () => { persistFilter(); search.textContent = '已搜索'; window.setTimeout(() => { if (search.isConnected) search.textContent = '搜索'; }, 900); });
-    reset.addEventListener('click', () => { filter = { ...defaultInterestFilter }; profitConfig = { ...defaultProfit }; void chrome.storage.local.remove([FILTER_KEY, PROFIT_KEY]); root.remove(); filterRoot = null; countNode = null; ensureToolbar(); recomputeOpportunities(); });
+    insightNode = document.createElement('div'); insightNode.className = 'xy-market-insight'; insightNode.textContent = '正在生成市场快照…'; body.append(insightNode);
+    const note = document.createElement('div'); note.className = 'xy-filter-note'; note.textContent = '机会得分：需求25% + 竞争25% + 新卖家进入性25% + 供需缺口15% + 利润10%。达到75分且样本、需求、竞争、进入性、净利均过线，才标记蓝海候选；时间未知的商品在启用发布时间筛选后会被排除。'; body.append(note);
+    search.addEventListener('click', () => { void chrome.storage.local.set({ [FILTER_KEY]: filter }); recomputeOpportunities(); search.textContent = '已搜索'; window.setTimeout(() => { if (search.isConnected) search.textContent = '搜索'; }, 900); });
+    exportButton.addEventListener('click', exportAnalysis);
+    reset.addEventListener('click', () => { filter = { ...defaultInterestFilter }; profitConfig = { ...defaultProfit }; void chrome.storage.local.remove([FILTER_KEY, PROFIT_KEY]); root.remove(); filterRoot = null; countNode = null; insightNode = null; ensureToolbar(); recomputeOpportunities(); });
     collapse.addEventListener('click', () => { const collapsed = root.dataset.collapsed !== 'true'; root.dataset.collapsed = String(collapsed); collapse.textContent = collapsed ? '展开' : '收起'; collapse.setAttribute('aria-expanded', String(!collapsed)); });
     root.append(head, body); feed.parentElement.insertBefore(root, feed); filterRoot = root; applyFilter();
   };
 
-  void chrome.storage.local.get([FILTER_KEY, PROFIT_KEY]).then(result => { const saved = result[FILTER_KEY] as InterestFilter | undefined; const savedProfit = result[PROFIT_KEY] as ProfitConfig | undefined; if (saved) filter = { ...defaultInterestFilter, ...saved }; if (savedProfit) profitConfig = { ...defaultProfit, ...savedProfit }; filterRoot?.remove(); filterRoot = null; ensureToolbar(); recomputeOpportunities(); });
+  void chrome.storage.local.get([FILTER_KEY, PROFIT_KEY]).then(result => { const saved = result[FILTER_KEY] as InterestFilter | undefined; const savedProfit = result[PROFIT_KEY] as ProfitConfig | undefined; if (saved) filter = { ...defaultInterestFilter, ...saved }; if (savedProfit) profitConfig = { ...defaultProfit, ...savedProfit }; filterRoot?.remove(); filterRoot = null; insightNode = null; ensureToolbar(); recomputeOpportunities(); });
   window.addEventListener('message', event => {
     const response = event.data as DetailResponse;
     if (event.source !== window || response?.source !== 'XY_RADAR' || response.type !== 'DETAIL_RESPONSE') return;
