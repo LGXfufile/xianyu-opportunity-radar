@@ -4,7 +4,7 @@
   "outputDirectory": ".output/chrome-mv3",
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/", "destination": "/sidepanel.html" }
+    { "source": "/", "destination": "/sidepanel" }
   ],
   "headers": [
     {
@@ -17,4 +17,3 @@
     }
   ]
 }
-
